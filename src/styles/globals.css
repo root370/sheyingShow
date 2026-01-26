@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 3, 3, 3;
+  --background-end-rgb: 3, 3, 3;
+  --accent-rgb: 229, 208, 172; /* Champagne Gold */
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: #030303;
+  min-height: 100vh;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Grain Texture */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030303;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #E5D0AC; /* Accent color on hover */
+}
+
+/* Custom Autofill Styles */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: white !important;
+    transition: background-color 5000s ease-in-out 0s;
+    box-shadow: inset 0 0 20px 20px transparent;
+}
+
+/* Utilities */
+.text-accent {
+  color: rgb(var(--accent-rgb));
+}
+
+.border-accent {
+  border-color: rgb(var(--accent-rgb));
+}
+
+.bg-accent {
+  background-color: rgb(var(--accent-rgb));
+}
+
+.font-serif {
+  font-family: var(--font-cormorant-garamond), serif;
+}
+
+.font-sans {
+  font-family: var(--font-manrope), sans-serif;
+}
+
+.writing-vertical-rl {
+  writing-mode: vertical-rl;
+}
+
+/* Typing Effect for AI Response */
+@keyframes typing {
+  from { width: 0 }
+  to { width: 100% }
+}
+
+@keyframes blink-caret {
+  from, to { border-color: transparent }
+  50% { border-color: #22d3ee; } /* Cyan-400 */
+}
+
+.typing-effect {
+  overflow: hidden; /* Ensures the content is not revealed until the animation */
+  /* border-right: .15em solid #22d3ee; */ /* The typwriter cursor */
+  /* white-space: nowrap; */ /* Keeps the content on a single line */
+  /* margin: 0 auto; */ /* Gives that scrolling effect as the typing happens */
+  /* letter-spacing: .15em; */ /* Adjust as needed */
+  /* animation: 
+    typing 3.5s steps(40, end),
+    blink-caret .75s step-end infinite; */
+  
+  /* Simple fade-in word by word simulation is hard in pure CSS for dynamic text */
+  /* Let's just do a nice fade in for now or rely on a JS library if we want true typing */
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
