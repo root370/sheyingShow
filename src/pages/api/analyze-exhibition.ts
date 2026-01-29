@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+// @ts-ignore
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

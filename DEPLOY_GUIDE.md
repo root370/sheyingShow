@@ -13,11 +13,25 @@
 **前提**：你需要拥有一台国内云服务器（阿里云、腾讯云等），且操作系统为 Ubuntu/CentOS。
 
 ### 1. 准备服务器环境
-在你的云服务器上安装 Node.js 和 Git：
+
+**情况 A：如果你是 Ubuntu / Debian 系统：**
 ```bash
-# Ubuntu 为例
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs git nginx
+```
+
+**情况 B：如果你是 CentOS / 阿里云 Linux / RedHat 系统：**
+(出现 "This script is only supported on Debian-based systems" 错误请用这个)
+```bash
+# 1. 安装 Node.js 源
+curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+
+# 2. 安装 Node.js, Git, Nginx
+sudo yum install -y nodejs git nginx
+
+# 3. 启动 Nginx (CentOS 需要手动启动)
+sudo systemctl start nginx
+sudo systemctl enable nginx
 ```
 
 ### 2. 获取代码
@@ -56,10 +70,36 @@ server {
 ```
 重启 Nginx：`sudo systemctl restart nginx`
 
-### 5. 域名解析
-去你的域名注册商（阿里云/腾讯云），添加 **A 记录**：
-*   主机记录: `@`，记录值: `你的服务器公网IP`
-*   主机记录: `www`，记录值: `你的服务器公网IP`
+### 6. 验证部署是否成功
+
+在服务器终端执行以下命令进行检查：
+
+1.  **检查 Node.js 服务是否在运行**：
+    ```bash
+    pm2 status
+    # 应该看到名为 "sheying-show" 的进程状态为 "online"
+    
+    # 或者检查端口占用
+    netstat -tulpn | grep 3000
+    ```
+
+2.  **检查 Nginx 是否正常**：
+    ```bash
+    systemctl status nginx
+    # 状态应该是 "active (running)"
+    ```
+
+3.  **本地访问验证**：
+    ```bash
+    curl http://localhost
+    # 如果返回了 HTML 代码（包含 <html...），说明 Nginx 到 Node.js 的转发是通的。
+    ```
+
+4.  **浏览器访问**：
+    打开你的浏览器，访问 `http://latentspace.top`。
+    *   如果能看到网站：🎉 成功！
+    *   如果显示 "Welcome to Nginx"：说明 Nginx 没配置好 `proxy_pass`，或者没重启。
+    *   如果无法访问 (超时)：检查阿里云/腾讯云后台的 **安全组 (防火墙)**，确保 **80 端口** 是开放的。
 
 ---
 
@@ -70,18 +110,15 @@ server {
 ### 1. 推送代码到 GitHub
 你需要先将本地代码推送到 GitHub 仓库。
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-# 关联你的 GitHub 仓库 (先在 GitHub 上创建空仓库)
-git remote add origin https://github.com/你的用户名/仓库名.git
+# 我已经帮你完成了 git init 和 commit
+# 你只需要运行以下命令进行推送 (需要验证 GitHub 账号):
 git push -u origin main
 ```
 
 ### 2. 在 Vercel 导入项目
 1.  访问 [vercel.com](https://vercel.com) 并使用 GitHub 登录。
 2.  点击 "Add New..." -> "Project"。
-3.  选择你刚才推送的 `sheyingShow` 仓库。
+3.  选择 `root370/sheyingShow` 仓库。
 4.  **配置环境变量** (非常重要！)：
     在 "Environment Variables" 区域，把 `.env` 文件里的内容复制进去：
     *   `NEXT_PUBLIC_SUPABASE_URL`

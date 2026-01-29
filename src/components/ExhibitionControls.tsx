@@ -48,7 +48,7 @@ export default function ExhibitionControls({ exhibitionId, authorId }: Exhibitio
             if (error) throw error;
             
             router.push('/'); // Return to lobby
-            router.refresh();
+            // router.refresh(); // Not available in Pages Router
         } catch (err) {
             console.error('Error deleting exhibition:', err);
             alert('Failed to delete exhibition. Please try again.');
