@@ -1,29 +1,18 @@
 import '@/styles/globals.css'
 import type { AppProps } from 'next/app'
-import { Cormorant_Garamond, Manrope } from 'next/font/google'
 import { ExhibitionProvider } from '@/context/ExhibitionContext';
 
-// Use 'swap' to prevent blocking and specify fallback fonts
-const cormorant = Cormorant_Garamond({ 
-  subsets: ['latin'],
-  variable: '--font-cormorant-garamond',
-  display: 'swap',
-  weight: ['300', '400', '500', '600', '700'],
-  fallback: ['Times New Roman', 'serif']
-})
+// 临时禁用 Google Fonts，改用系统字体以修复国内构建问题
+// import { Cormorant_Garamond, Manrope } from 'next/font/google'
 
-const manrope = Manrope({ 
-  subsets: ['latin'],
-  variable: '--font-manrope',
-  display: 'swap',
-  fallback: ['Arial', 'sans-serif'],
-  adjustFontFallback: false // Disable automatic fallback adjustment which might trigger downloads
-})
+// const cormorant = Cormorant_Garamond({ ... })
+// const manrope = Manrope({ ... })
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <ExhibitionProvider>
-      <main className={`${cormorant.variable} ${manrope.variable} font-sans`}>
+      {/* 暂时移除字体变量 */}
+      <main className={`font-sans`}>
         <Component {...pageProps} />
       </main>
     </ExhibitionProvider>
