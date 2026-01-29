@@ -424,10 +424,18 @@ export default function Lobby({ mode }: LobbyProps) {
         </AnimatePresence>
       </div>
       {/* Footer */}
-      <footer className="fixed bottom-4 left-0 w-full text-center pointer-events-none z-40">
+      <footer className="fixed bottom-4 left-0 w-full text-center pointer-events-none z-40 flex flex-col items-center gap-1">
         <p className="text-[10px] font-sans text-white/20 tracking-[0.2em] uppercase">
           LATENT © 2026. Slow Photography Protocol.
         </p>
+        <a 
+          href="https://beian.miit.gov.cn/" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-[10px] font-sans text-white/10 hover:text-white/30 tracking-[0.1em] pointer-events-auto transition-colors"
+        >
+          沪ICP备2026003431号-1
+        </a>
       </footer>
     </main>
   );
