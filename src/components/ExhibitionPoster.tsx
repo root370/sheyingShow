@@ -122,6 +122,8 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
         // Wait a bit before removing from list so user sees the toast
         setTimeout(() => {
              if (onDelete) onDelete(exhibition.id);
+             // Force hard reload to ensure data consistency
+             window.location.reload();
         }, 1500);
 
     } catch (err) {

@@ -86,6 +86,9 @@ export default function Lobby({ mode }: LobbyProps) {
           const updatedExplore = exploreCache.exhibitions.filter(e => e.id !== deletedId);
           setExploreCache(updatedExplore);
       }
+      
+      // Force refresh data from server to ensure sync
+      router.replace(router.asPath);
   };
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
