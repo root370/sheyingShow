@@ -22,6 +22,14 @@ export default function Lobby({ mode }: LobbyProps) {
   // Initialize with empty to avoid hydration mismatch
   const [exhibitions, setExhibitions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const [userProfile, setUserProfile] = useState<{username: string, essence: string} | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -102,8 +110,21 @@ export default function Lobby({ mode }: LobbyProps) {
             console.error("Login check failed", error);
         }
     }
+    // Listen for auth state changes (e.g. login in another tab or redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        setIsLoggedIn(!!session?.user);
+        if (event === 'SIGNED_OUT') {
+            setIsLoggedIn(false);
+            if (mode === 'dashboard') router.replace('/login');
+        }
+    });
+    
     checkLogin();
-  }, [mode]); // Re-check on mode switch just in case
+
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, [mode, router]);
 
   useEffect(() => {
     async function fetchData() {
@@ -247,13 +268,36 @@ export default function Lobby({ mode }: LobbyProps) {
       {/* Grain Overlay Removed (Moved to Global CSS) */}
       
       {/* Header / Nav */}
-      <header className="fixed top-0 w-full z-50 px-8 py-8 flex justify-between items-center mix-blend-difference text-white pointer-events-none">
-        <div className="flex flex-col pointer-events-auto">
-             <h1 className="font-serif text-3xl font-bold tracking-[0.3em] uppercase text-white leading-none">L A T E N T</h1>
-             <span className="text-[8px] tracking-[0.5em] font-sans font-medium opacity-50 uppercase mt-1">DEVELOP THE UNSEEN</span>
+      <header className="fixed top-0 w-full z-50 px-6 pt-12 pb-6 md:px-8 md:py-8 flex justify-between items-start md:items-center mix-blend-difference text-white pointer-events-none">
+        <div className="hidden md:flex flex-col pointer-events-auto">
+             {/* Mobile Logo */}
+             <div className="md:hidden flex flex-col items-center leading-none">
+                <h1 className="font-sans text-2xl font-bold text-white mb-1 flex flex-col items-center gap-0.5">
+                    <span>L</span>
+                    <span>T</span>
+                </h1>
+             </div>
+             {/* Desktop Logo */}
+             <div className="hidden md:block">
+                 <h1 className="font-serif text-3xl font-bold tracking-[0.3em] uppercase text-white leading-none">L A T E N T</h1>
+             </div>
+             
+             <span className="text-[8px] tracking-[0.3em] font-sans font-medium opacity-70 uppercase mt-2 md:mt-1 text-center md:text-left">
+                DEVELOP THE UNSEEN
+             </span>
         </div>
 
-        <div className="flex items-center gap-8 pointer-events-auto">
+        <div className="flex items-center gap-8 pointer-events-auto pt-2 md:pt-0 absolute top-8 right-6 md:static">
+            {!isExplore && isLoggedIn && (
+                <Link 
+                    href="/editor" 
+                    className="md:hidden flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity duration-300"
+                    aria-label="Import Negative"
+                >
+                    <Plus size={20} strokeWidth={1} />
+                    <span className="text-[10px] font-sans tracking-widest uppercase text-white">上传</span>
+                </Link>
+            )}
             {isLoggedIn ? (
                 <>
                     <button 
@@ -274,10 +318,10 @@ export default function Lobby({ mode }: LobbyProps) {
             ) : (
                 <Link 
                     href="/login" 
-                    className="opacity-60 hover:opacity-100 transition-opacity duration-300 font-sans text-xs tracking-[0.2em] uppercase"
+                    className="flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 font-sans text-xs tracking-[0.2em] uppercase"
                     aria-label="Sign in"
                 >
-                    Sign In
+                    Sign In <ArrowRight size={14} />
                 </Link>
             )}
         </div>
@@ -389,9 +433,9 @@ export default function Lobby({ mode }: LobbyProps) {
                     <div className="relative z-10 pb-20 px-6 md:px-12 lg:px-24 max-w-[1920px] mx-auto">
                         
                         {/* Gallery Grid */}
-                        <div className="space-y-20 mt-20">
+                        <div className="space-y-0 md:space-y-20 mt-0 md:mt-20">
                              {!isExplore && (
-                                <div className="flex items-center justify-between">
+                                <div className="hidden md:flex items-center justify-between">
                                     <h3 className="font-serif text-4xl text-white italic">Selected Works</h3>
                                     <div className="h-[1px] flex-1 bg-white/5 mx-12" />
                                 </div>
@@ -407,7 +451,7 @@ export default function Lobby({ mode }: LobbyProps) {
                                     )}
                                  </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
+                                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-[15px] md:gap-x-8 md:gap-y-16">
                                     {exhibitions.map((exhibition, index) => (
                                         <ExhibitionPoster 
                                             key={exhibition.id}  

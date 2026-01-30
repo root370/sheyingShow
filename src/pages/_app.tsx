@@ -8,11 +8,14 @@ import { ExhibitionProvider } from '@/context/ExhibitionContext';
 // const cormorant = Cormorant_Garamond({ ... })
 // const manrope = Manrope({ ... })
 
+import WelcomeLetter from '@/components/WelcomeLetter';
+
 export default function App({ Component, pageProps }: AppProps) {
   return (
     <ExhibitionProvider>
       {/* 暂时移除字体变量 */}
       <main className={`font-sans`}>
+        <WelcomeLetter />
         <Component {...pageProps} />
       </main>
     </ExhibitionProvider>

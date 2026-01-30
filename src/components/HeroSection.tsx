@@ -20,7 +20,7 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
   const textFilter = useMotionTemplate`blur(${blurValue}px)`;
 
   return (
-    <div className="relative h-screen w-full overflow-hidden flex items-center justify-center">
+    <div className="relative md:h-screen w-full overflow-hidden flex flex-col md:flex-row items-center justify-center pt-28 md:pt-0">
       
       {/* 1. Grid Background */}
       <div 
@@ -35,43 +35,100 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
       />
       
       {/* 2. Central Rive Animation (The "Astronaut/Planet" equivalent) */}
-      <div className="absolute inset-0 z-0 opacity-80 mix-blend-screen">
-            <RiveAnimation 
-                src="/rive/289-568-planets.riv"
-                fit={Fit.Contain}
-                alignment={Alignment.Center}
-            />
-            {/* Gradient Overlay to fade the bottom of the 3D element */}
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+      <div className="absolute inset-0 z-0 opacity-80 mix-blend-screen pointer-events-none">
+            {/* 
+               Rive Animation Container 
+               - Desktop: Full screen, centered
+               - Mobile: Positioned to fit without forcing full screen height
+            */}
+            <div className="w-full h-full md:block hidden">
+                <RiveAnimation 
+                    src="/rive/289-568-planets.riv"
+                    fit={Fit.Contain}
+                    alignment={Alignment.Center}
+                />
+            </div>
+            
+            {/* Mobile specific Rive container */}
+            <div className="absolute top-0 left-0 w-full h-[60vh] md:hidden flex items-start justify-center pt-10 opacity-50">
+                 <RiveAnimation 
+                    src="/rive/289-568-planets.riv"
+                    fit={Fit.Cover}
+                    alignment={Alignment.Center}
+                />
+            </div>
+
+            {/* Gradient Overlay - Reduced Height */}
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent h-1/4 bottom-0 top-auto z-0" />
       </div>
 
       {/* 3. Text Overlay */}
-      <div className="relative z-10 w-full max-w-[1920px] px-8 md:px-24 flex flex-col justify-center h-full pointer-events-none">
+      <div className="relative z-10 w-full max-w-[1920px] px-8 md:px-24 flex flex-col justify-center h-auto md:h-full pointer-events-none mb-20 md:mb-0">
           
           <motion.div 
-            className="mix-blend-difference space-y-2"
+            className="mix-blend-difference space-y-2 relative"
             style={{ y: textY, opacity: textOpacity, filter: textFilter }}
           >
-            <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.2 }}
-                className="font-sans text-xs md:text-sm font-bold tracking-[0.4em] text-neutral-400 uppercase mb-4 flex items-center gap-4"
-            >
-                <span className="w-12 h-[1px] bg-accent"></span>
-                {subtitle}
-            </motion.div>
+            {/* Mobile Layout (Decorative Blobs + 5-line Headline) */}
+            <div className="md:hidden pt-8 pb-12">
+                {/* Decorative Blobs */}
+                <div className="absolute -top-20 -left-20 w-32 h-32 bg-gray-500/20 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute top-1/2 -right-10 w-24 h-24 bg-accent/10 rounded-full blur-2xl pointer-events-none" />
+                
+                {/* Curated Collection Label */}
+                <motion.div 
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.8, delay: 0.2 }}
+                    className="flex items-center gap-4 mb-8"
+                >
+                    <div className="w-12 h-[1px] bg-accent/80" />
+                    <span className="font-sans text-[10px] font-medium tracking-[0.4em] text-white/90 uppercase">
+                        {subtitle}
+                    </span>
+                </motion.div>
 
-            <motion.h1 
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-                className="font-sans text-5xl md:text-7xl lg:text-9xl font-black tracking-tighter text-white leading-[0.9] md:leading-[0.85] max-w-5xl"
-            >
-                <span className="block text-neutral-600">WE DON'T JUST</span>
-                <span className="block text-accent">CAPTURE</span>
-                <span className="block">WE REIMAGINE</span>
-            </motion.h1>
+                {/* Main Headline (Mobile) */}
+                <motion.h1 
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, delay: 0.4 }}
+                    className="font-sans text-5xl font-black tracking-tighter leading-[0.9] max-w-5xl relative"
+                >
+                    <span className="block text-[#7f7f7f]">WE DON'T</span>
+                    <span className="block text-[#7f7f7f]">JUST</span>
+                    <span className="block text-accent">CAPTURE</span>
+                    <span className="block text-white">WE</span>
+                    <span className="block text-white">REIMAGINE</span>
+                </motion.h1>
+                
+                {/* Bottom Gray Blob */}
+                <div className="absolute -bottom-10 right-0 w-24 h-24 bg-gray-500 rounded-full blur-sm opacity-80 pointer-events-none" />
+            </div>
+
+            {/* Desktop Layout (Original 3-line Headline) */}
+            <div className="hidden md:block">
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, delay: 0.2 }}
+                    className="font-sans text-sm font-bold tracking-[0.4em] text-neutral-400 uppercase mb-4 flex items-center gap-4"
+                >
+                    <span className="w-12 h-[1px] bg-accent"></span>
+                    {subtitle}
+                </motion.div>
+
+                <motion.h1 
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, delay: 0.4 }}
+                    className="font-sans text-7xl lg:text-9xl font-black tracking-tighter text-white leading-[0.85] max-w-5xl"
+                >
+                    <span className="block text-neutral-600">WE DON'T JUST</span>
+                    <span className="block text-accent">CAPTURE</span>
+                    <span className="block">WE REIMAGINE</span>
+                </motion.h1>
+            </div>
 
             {userProfile && (
                 <motion.div 
@@ -88,7 +145,7 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
                     </p>
 
                     {/* New Exhibition Button (Darkroom Import Style) */}
-                    <div className="mt-12 pointer-events-auto">
+                    <div className="mt-12 pointer-events-auto hidden md:block">
                         <Link 
                             href="/editor"
                             className="group inline-flex items-center gap-3 px-6 py-3 border border-white/20 bg-white/5 hover:bg-white hover:text-black backdrop-blur-sm transition-all duration-300 rounded-sm"

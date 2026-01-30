@@ -529,8 +529,8 @@ export default function EditorPage() {
         </div>
       )}
 
-      {/* Top Area: Gallery Preview (70vh) */}
-      <div className="h-[70dvh] w-full border-b border-white/10 relative overflow-hidden">
+      {/* Top Area: Gallery Preview (70vh on Desktop, 60vh on Mobile) */}
+      <div className="h-[60dvh] md:h-[70dvh] w-full border-b border-white/10 relative overflow-hidden">
            <GalleryPreview 
              items={galleryItems} 
              onStateChange={handlePreviewStateChange} 
@@ -541,8 +541,8 @@ export default function EditorPage() {
            />
       </div>
 
-        {/* Bottom Area: Light Table (30vh) */}
-        <div className="h-[30dvh] w-full bg-white/5 backdrop-blur-md relative">
+        {/* Bottom Area: Light Table (30vh on Desktop, 40vh on Mobile) */}
+        <div className="h-[40dvh] md:h-[30dvh] w-full bg-white/5 backdrop-blur-md relative">
             <DroppablePool items={poolItems} onUpload={handleUpload} />
         </div>
 

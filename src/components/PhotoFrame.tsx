@@ -29,6 +29,7 @@ interface PhotoFrameProps {
   skipDeveloping?: boolean;
   className?: string;
   contentMaxHeight?: string; // New prop for explicit image height constraint
+  isMobile?: boolean;
 }
 
 const PhotoFrame: React.FC<PhotoFrameProps> = ({ 
@@ -45,7 +46,8 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   isInspecting = false,
   skipDeveloping = false,
   className = '',
-  contentMaxHeight
+  contentMaxHeight,
+  isMobile = false
 }) => {
   // Developing State
   const [isDeveloped, setIsDeveloped] = useState(skipDeveloping); // If skipDeveloping is true, start as developed
@@ -109,18 +111,47 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     audio.play().catch(e => console.log("Audio play failed", e));
   };
 
-  const startDeveloping = (e: React.MouseEvent | React.TouchEvent) => {
+  const startDeveloping = (e: React.PointerEvent | React.MouseEvent | React.TouchEvent) => {
     if (isDeveloped || isInspecting) return;
     // Don't trigger if clicking an annotation
     if ((e.target as HTMLElement).closest('.annotation-dot')) return;
 
+    // Prevent default browser behaviors like dragging or selection ONLY on desktop or specific cases
+    // On mobile, we MUST allow touchstart to propagate/default for scrolling to work, 
+    // unless we are sure we want to block it.
+    // Actually, to prevent context menu on long press, we use CSS. 
+    // To prevent text selection, we use CSS select-none.
+    // So we should NOT preventDefault on touchstart if we want scrolling.
+    if (!isMobile) {
+        e.preventDefault();
+    }
+
     setIsHolding(true);
     
+    // Haptics - Start
+    if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(10); } catch(e) {}
+    }
+    
+    const duration = isMobile ? 2000 : 3000;
+
     holdTimer.current = setTimeout(() => {
         setIsDeveloped(true);
         setIsHolding(false);
         playDevelopSound();
-    }, 3000);
+        
+        // Haptics - Completion
+        if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(50); } catch(e) {}
+        }
+    }, duration);
+  };
+
+  // Add a handler to cancel developing on scroll (touchmove)
+  const handleTouchMove = () => {
+      if (isHolding) {
+          cancelDeveloping();
+      }
   };
 
   const cancelDeveloping = () => {
@@ -453,6 +484,239 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     }
   };
 
+  if (isMobile) {
+    return (
+        <div className="relative w-full h-full bg-black overflow-hidden select-none">
+            {/* Mobile AI Analysis Bottom Sheet */}
+            {mounted && createPortal(
+                <AnimatePresence>
+                    {showAnalysis && (
+                        <div className="fixed inset-0 z-[9999] flex items-end justify-center">
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowAnalysis(false)}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            />
+                            <motion.div 
+                                initial={{ y: "100%" }}
+                                animate={{ y: 0 }}
+                                exit={{ y: "100%" }}
+                                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                                className="relative bg-[#0A0A0A] w-full h-[85vh] rounded-t-2xl overflow-hidden flex flex-col"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="w-full h-1 bg-white/20 mx-auto mt-3 mb-1 w-[40px] rounded-full shrink-0" />
+                                {/* Reuse existing modal content structure but adapted for vertical scrolling */}
+                                <div className="flex-1 overflow-y-auto p-6 pb-20">
+                                    {/* Content from desktop modal - Simplified */}
+                                    {isAnalyzing ? (
+                                        <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+                                            <Sparkles className="text-cyan-400 animate-pulse mb-6" size={32} />
+                                            <p className="text-xs text-white/70 leading-relaxed font-sans tracking-widest uppercase">
+                                                AI正在分析和创造图片中<br/>
+                                                全程需要等待1分钟<br/>
+                                                非常感谢你的等待<br/>
+                                                你很不一样
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8">
+                                            {/* Mobile Comparison Slider / Split View */}
+                                            {analysisResult?.improved_image_url && (
+                                                <div className="space-y-4">
+                                                    <div className="flex justify-between items-center px-1">
+                                                         <h4 className="text-[10px] font-sans font-semibold tracking-[0.2em] uppercase text-[#666666]">
+                                                            VISUAL ENHANCEMENT
+                                                         </h4>
+                                                         {!isMobile && (
+                                                             <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] font-sans tracking-widest text-cyan-500/80 uppercase">Drag to Compare</span>
+                                                             </div>
+                                                         )}
+                                                    </div>
+
+                                                    {isMobile ? (
+                                                        /* Mobile Split View */
+                                                        <div className={`flex gap-2 ${aspectRatio === 'portrait' ? 'flex-row h-64' : 'flex-col'}`}>
+                                                            {/* Original */}
+                                                            <div className="relative flex-1 rounded-sm overflow-hidden border border-white/10 bg-[#050505]">
+                                                                <img 
+                                                                    src={src} 
+                                                                    alt="Original" 
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-sm border border-white/10">
+                                                                    <span className="text-[8px] text-white/80 font-sans tracking-widest uppercase">Original</span>
+                                                                </div>
+                                                            </div>
+                                                            
+                                                            {/* Enhanced */}
+                                                            <div className="relative flex-1 rounded-sm overflow-hidden border border-cyan-500/20 bg-[#050505]">
+                                                                <img 
+                                                                    src={analysisResult.improved_image_url} 
+                                                                    alt="AI Enhanced" 
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                                <div className="absolute top-2 right-2 bg-cyan-950/60 backdrop-blur-md px-2 py-1 rounded-sm border border-cyan-500/20">
+                                                                    <span className="text-[8px] text-cyan-200 font-sans tracking-widest uppercase flex items-center gap-1">
+                                                                        <Sparkles size={8} /> AI
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        /* Desktop Slider */
+                                                        <div 
+                                                            ref={sliderRef}
+                                                            className="relative w-full aspect-[4/3] rounded-sm overflow-hidden border border-white/10 bg-[#050505] cursor-col-resize select-none shadow-2xl group"
+                                                            onMouseDown={startSliderDrag}
+                                                            onTouchStart={startSliderDrag}
+                                                        >
+                                                            {/* Image 2 (Improved - Background) */}
+                                                            <img 
+                                                                src={analysisResult.improved_image_url} 
+                                                                alt="AI Enhanced" 
+                                                                className="absolute inset-0 w-full h-full object-contain pointer-events-none" 
+                                                            />
+
+                                                            {/* Image 1 (Original - Clipped Overlay) */}
+                                                            <div 
+                                                                className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none border-r border-white/20"
+                                                                style={{ width: `${sliderPosition}%` }}
+                                                            >
+                                                                <img 
+                                                                    src={src} 
+                                                                    alt="Original" 
+                                                                    className="absolute inset-0 w-full h-full object-contain max-w-none" 
+                                                                    style={{ width: sliderRef.current ? sliderRef.current.clientWidth : '100%' }}
+                                                                />
+                                                                
+                                                                {/* Label: Original */}
+                                                                <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2 py-1 rounded-sm border border-white/10">
+                                                                    <span className="text-[9px] text-white/80 font-sans tracking-widest uppercase">Original</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Label: Enhanced (on the right side) */}
+                                                            <div className="absolute top-4 right-4 bg-cyan-950/60 backdrop-blur-md px-2 py-1 rounded-sm border border-cyan-500/20 pointer-events-none">
+                                                                <span className="text-[9px] text-cyan-200 font-sans tracking-widest uppercase flex items-center gap-1">
+                                                                    <Sparkles size={8} /> AI Enhanced
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Handle Line */}
+                                                            <div 
+                                                                className="absolute top-0 bottom-0 w-[1px] bg-white/50 z-20 pointer-events-none shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                                                                style={{ left: `${sliderPosition}%` }}
+                                                            >
+                                                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 bg-white rounded-full shadow-lg flex items-center justify-center transform transition-transform group-hover:scale-110">
+                                                                    <div className="flex gap-0.5">
+                                                                        <div className="w-[1px] h-3 bg-black/40" />
+                                                                        <div className="w-[1px] h-3 bg-black/40" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Report */}
+                                            {analysisResult?.error ? (
+                                                <div className="text-red-400 font-mono text-xs">{analysisResult.error}</div>
+                                            ) : (
+                                                <div className="font-mono text-[#CCC] text-xs leading-relaxed space-y-4">
+                                                     <h2 className="font-serif text-xl text-white mb-6 uppercase tracking-widest border-b border-white/10 pb-4">Analysis Report</h2>
+                                                     {parsedCritique?.overview && <p>{parsedCritique.overview}</p>}
+                                                     {parsedCritique?.sections.map((s, i) => (
+                                                         <div key={i} className="pt-4 border-t border-dashed border-white/10">
+                                                             <h4 className="text-[10px] font-bold text-[#888] uppercase mb-2">{s.title}</h4>
+                                                             <ul className="space-y-2">
+                                                                 {s.content.map((c, ci) => <li key={ci} className="text-[#BBB]">• {c}</li>)}
+                                                             </ul>
+                                                         </div>
+                                                     ))}
+                                                     {!parsedCritique && analysisResult?.content && <div>{analysisResult.content}</div>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
+
+            <div 
+                className="relative w-full h-full"
+                onMouseDown={startDeveloping}
+                onMouseUp={cancelDeveloping}
+                onMouseLeave={cancelDeveloping}
+                onTouchStart={startDeveloping}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={cancelDeveloping}
+                onContextMenu={(e) => e.preventDefault()}
+            >
+                {/* Image */}
+                <img
+                    src={src}
+                    alt={alt}
+                    className="w-full h-full object-cover pointer-events-none"
+                    style={{
+                        filter: isDeveloped || isHolding 
+                            ? 'grayscale(0%) brightness(100%) blur(0px)'
+                            : 'grayscale(100%) brightness(75%) blur(20px)',
+                        transition: 'filter 2s ease-in-out'
+                    }}
+                />
+                
+                {/* Hold Hint */}
+                {!isDeveloped && !isHolding && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                         {isMobile ? (
+                            // Mobile: Static Hint (No Pulse/Fade out animation if requested to cancel fade, but user said "cancel floating slowly disappearing animation" - likely means make it static or remove specific animation)
+                            // "cancel floating slowly disappearing animation" -> likely refers to an exit animation or a breathing effect that might be distracting.
+                            // Let's keep it simple and static on mobile if that's the request, or just remove the 'animate-pulse' or similar.
+                            // Interpreting "cancel floating slowly disappearing animation" as: make it persistent or remove the entrance/exit fade logic? 
+                            // Usually "slowly disappearing" refers to a toast or a fade-out. 
+                            // IF the user means the prompt should stay visible until interacted with, the current logic `!isDeveloped && !isHolding` handles that.
+                            // IF the user means the text itself shouldn't have the breathing animation:
+                            <div className="bg-black/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10">
+                                <p className="text-white/90 text-xs font-serif tracking-[0.2em] uppercase">
+                                    Hold to Develop
+                                </p>
+                            </div>
+                         ) : (
+                            <div className="bg-black/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10 animate-pulse">
+                                <p className="text-white/90 text-xs font-serif tracking-[0.2em] uppercase">
+                                    Hold to Develop
+                                </p>
+                            </div>
+                         )}
+                    </div>
+                )}
+                
+                {/* AI Trigger */}
+                {isDeveloped && (
+                    <div 
+                        className="fixed bottom-4 left-0 right-0 flex justify-center z-50 pointer-events-auto"
+                        onClick={handleAnalyze}
+                    >
+                         <div className="flex flex-col items-center animate-bounce text-white/60 bg-black/20 p-2 rounded-lg backdrop-blur-sm">
+                             <span className="text-lg leading-none mb-1">^</span>
+                             <span className="text-[10px] uppercase tracking-widest">AI Analysis</span>
+                         </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+  }
+
   return (
     <div className="relative group">
        {/* Analysis Result Modal - Portal to Body */}
@@ -517,8 +781,11 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                         <div className="absolute inset-0 w-16 h-16 border-t border-cyan-400/80 rounded-full animate-[spin_1s_ease-in-out_infinite]" />
                                         <Sparkles className="absolute inset-0 m-auto text-cyan-400/50 animate-pulse" size={20} />
                                     </div>
-                                    <p className="text-xs font-sans tracking-[0.2em] uppercase text-white/40 animate-pulse">
-                                        Analyzing Composition...
+                                    <p className="text-xs font-sans tracking-[0.2em] uppercase text-white/40 animate-pulse text-center leading-relaxed">
+                                        AI正在分析和创造图片中<br/>
+                                        全程需要等待1分钟<br/>
+                                        非常感谢你的等待<br/>
+                                        你很不一样
                                     </p>
                                 </div>
                             ) : analysisResult ? (
@@ -769,7 +1036,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
               draggable={false}
               className="w-auto h-auto block object-contain select-none"
               style={{
-                maxHeight: contentMaxHeight || '100%',
+                maxHeight: isMobile ? 'none' : (contentMaxHeight || '100%'),
                 maxWidth: '100%',
                 // Developing Logic
                 filter: isDeveloped || isHolding 
@@ -853,45 +1120,93 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
                 {/* Draft Dot & Input Popover */}
                 {draftDot && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="absolute z-30"
-                        style={{ left: `${draftDot.x}%`, top: `${draftDot.y}%` }}
-                        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking input
-                    >
-                        {/* The Dot */}
-                        <div className="w-4 h-4 -ml-2 -mt-2 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse" />
-                        
-                        {/* The Input Popover */}
-                        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-64 bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-sm shadow-2xl">
-                            <form onSubmit={saveAnnotation}>
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-[10px] font-serif text-gray-400 tracking-widest uppercase">ADD COMMENT</span>
-                                    <button type="button" onClick={() => cancelDraft()} className="text-gray-500 hover:text-white transition-colors">
-                                        <X size={12} />
-                                    </button>
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="absolute z-30"
+                            style={{ left: `${draftDot.x}%`, top: `${draftDot.y}%` }}
+                            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking input
+                        >
+                            {/* The Dot */}
+                            <div className="w-4 h-4 -ml-2 -mt-2 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse" />
+                            
+                            {/* Desktop Input Popover */}
+                            {!isMobile && (
+                                <div className="absolute top-6 left-1/2 -translate-x-1/2 w-64 bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-sm shadow-2xl">
+                                    <form onSubmit={saveAnnotation}>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-serif text-gray-400 tracking-widest uppercase">ADD COMMENT</span>
+                                            <button type="button" onClick={(e) => cancelDraft(e)} className="text-gray-500 hover:text-white transition-colors">
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                        <textarea
+                                            autoFocus
+                                            value={draftMessage}
+                                            onChange={(e) => setDraftMessage(e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-sm p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[60px] resize-none mb-2 font-sans"
+                                            placeholder="What catches your eye?"
+                                        />
+                                        <div className="flex justify-end">
+                                            <button 
+                                                type="submit" 
+                                                disabled={isSubmitting || !draftMessage.trim()}
+                                                className="bg-white text-black text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-sm hover:bg-cyan-400 hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                {isSubmitting ? 'SAVING...' : 'POST'}
+                                                {!isSubmitting && <Send size={10} />}
+                                            </button>
+                                        </div>
+                                    </form>
                                 </div>
-                                <textarea
-                                    autoFocus
-                                    value={draftMessage}
-                                    onChange={(e) => setDraftMessage(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-sm p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[60px] resize-none mb-2 font-sans"
-                                    placeholder="What catches your eye?"
+                            )}
+                        </motion.div>
+
+                        {/* Mobile Input Bottom Sheet */}
+                        {isMobile && mounted && createPortal(
+                            <div className="fixed inset-0 z-[100] flex flex-col justify-end" onClick={(e) => { e.stopPropagation(); cancelDraft(); }}>
+                                <motion.div 
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
                                 />
-                                <div className="flex justify-end">
-                                    <button 
-                                        type="submit" 
-                                        disabled={isSubmitting || !draftMessage.trim()}
-                                        className="bg-white text-black text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-sm hover:bg-cyan-400 hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
-                                    >
-                                        {isSubmitting ? 'SAVING...' : 'POST'}
-                                        {!isSubmitting && <Send size={10} />}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </motion.div>
+                                <motion.div 
+                                    initial={{ y: "100%" }}
+                                    animate={{ y: 0 }}
+                                    exit={{ y: "100%" }}
+                                    className="relative bg-[#111] border-t border-white/10 p-6 pb-8 w-full rounded-t-2xl shadow-2xl z-10" 
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <form onSubmit={saveAnnotation}>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <span className="text-xs font-serif text-white tracking-widest uppercase">Add Comment</span>
+                                            <button type="button" onClick={(e) => cancelDraft(e)} className="text-white/50 hover:text-white p-2">
+                                                <X size={20} />
+                                            </button>
+                                        </div>
+                                        <textarea
+                                            autoFocus
+                                            value={draftMessage}
+                                            onChange={(e) => setDraftMessage(e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg p-4 text-base text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[100px] resize-none mb-4 font-sans"
+                                            placeholder="What catches your eye?"
+                                        />
+                                        <button 
+                                            type="submit" 
+                                            disabled={isSubmitting || !draftMessage.trim()}
+                                            className="w-full bg-white text-black text-sm font-bold uppercase tracking-wider py-4 rounded-full hover:bg-cyan-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                        >
+                                            {isSubmitting ? 'Saving...' : 'Post Comment'}
+                                            {!isSubmitting && <Send size={14} />}
+                                        </button>
+                                    </form>
+                                </motion.div>
+                            </div>,
+                            document.body
+                        )}
+                    </>
                 )}
              </AnimatePresence>
           </div>

@@ -6,6 +6,9 @@ export default function Document() {
       <Head>
         <meta name="description" content="High-end photography exhibition platform" />
         <link rel="icon" href="/icon.svg" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="theme-color" content="#000000" />
       </Head>
       <body className="font-sans bg-[#030303] text-white min-h-screen selection:bg-[#E5D0AC] selection:text-black">
         {/* Global SVG Filters */}

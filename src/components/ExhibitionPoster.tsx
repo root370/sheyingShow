@@ -200,7 +200,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
                     <button
                         onClick={toggleCollect}
                         aria-label={isCollected ? "Remove from collection" : "Add to collection"}
-                        className={`absolute top-6 right-6 z-20 p-3 rounded-full backdrop-blur-md transition-all duration-300 ${
+                        className={`absolute top-2 right-2 md:top-6 md:right-6 z-20 p-3 rounded-full backdrop-blur-md transition-all duration-300 ${
                             isCollected 
                             ? 'bg-accent text-black shadow-[0_0_15px_rgba(229,208,172,0.5)]' 
                             : 'bg-black/20 text-white/50 hover:bg-white hover:text-black'

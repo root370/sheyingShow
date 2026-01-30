@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-mo
 import PhotoFrame from './PhotoFrame';
 import { Photo } from '@/data/photos';
 import { useInspectionMode } from '@/hooks/useInspectionMode';
-import { Grid, X, Send } from 'lucide-react';
+import { Grid, X, Send, MessageSquare } from 'lucide-react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
@@ -43,7 +43,9 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   const [isSent, setIsSent] = useState(false); // Track success state for animation
 
   // Inspection Mode
-  const isInspecting = useInspectionMode();
+  const isInspectingKey = useInspectionMode();
+  const [isInspectingMobile, setIsInspectingMobile] = useState(false);
+  const isInspecting = isInspectingKey || isInspectingMobile;
   
   // Spotlight Colors (Preface is index 0)
   const activeColor = activeIndex === 0 ? '#050505' : photos[activeIndex - 1]?.color || '#050505';
@@ -52,6 +54,17 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   const [itemPositions, setItemPositions] = useState<number[]>([]);
 
   const [isAuthor, setIsAuthor] = useState(initialIsAuthor);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect Mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Check if current user is the author
   useEffect(() => {
@@ -193,6 +206,8 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     let animationFrameId: number;
 
     const loop = () => {
+      if (isMobile) return;
+
       // Lerp formula: current = current + (target - current) * factor
       const diff = targetX.current - currentX.current;
       
@@ -340,11 +355,11 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   return (
     <div 
       ref={containerRef} 
-      className="relative w-full h-screen overflow-hidden flex flex-col justify-center bg-[#050505]"
+      className={`relative w-full h-screen bg-[#050505] ${isMobile ? 'overflow-y-scroll snap-y snap-mandatory' : 'overflow-hidden flex flex-col justify-center'}`}
     >
       {/* Atmosphere: Spotlight & Noise */}
       <div 
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 pointer-events-none fixed"
         style={{
           background: 'radial-gradient(circle at 50% 30%, #2a2a2a 0%, #000000 70%)'
         }}
@@ -357,7 +372,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
              raysSpeed={1} 
              lightSpread={0.5} 
              rayLength={3} 
-             followMouse={true} 
+             followMouse={!isMobile} 
              mouseInfluence={0.1} 
              noiseAmount={0} 
              distortion={0} 
@@ -380,22 +395,27 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       {/* Content Container */}
       <motion.div 
         ref={contentRef}
-        style={{ x, skewX }}
-        className="flex items-center gap-16"
+        style={isMobile ? {} : { x, skewX }}
+        className={isMobile ? 'w-full' : 'flex items-center gap-16'}
       >
         {/* Preface Section (Index 0) */}
-        <div className="shrink-0 w-screen h-screen flex flex-col justify-center items-center text-center relative">
-            <div className="max-w-2xl text-center">
+        <div className={`flex flex-col justify-center items-center text-center relative ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
+            <div className="max-w-2xl text-center px-6">
                 <h1 className="font-serif text-6xl md:text-8xl text-white mb-8 tracking-tighter uppercase">{title || "THE UNSEEN"}</h1>
                 <p className="font-sans text-gray-400 text-lg leading-relaxed max-w-lg mx-auto">
                     {description || "A journey through the spaces between moments. This exhibition explores the silence that lingers after the shutter clicks, revealing the unseen textures of memory and light."}
                 </p>
+                {isMobile && (
+                    <div className="mt-12 animate-bounce opacity-50">
+                        <p className="text-[10px] tracking-[0.3em] uppercase text-white">Scroll to Develop</p>
+                    </div>
+                )}
             </div>
         </div>
 
         {/* Photos (Index 1+) */}
         {photos.map((photo, index) => (
-          <div key={photo.id} className="shrink-0 relative">
+          <div key={photo.id} className={isMobile ? 'min-h-screen w-full snap-start flex flex-col justify-center bg-black py-20' : 'shrink-0 relative'}>
             <PhotoFrame 
               id={photo.id}
               src={photo.src}
@@ -408,12 +428,13 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               isInspecting={isInspecting}
               skipDeveloping={isAuthor}
               exif={photo.exif}
+              isMobile={isMobile}
             />
           </div>
         ))}
 
         {/* Guestbook Slide (Final) */}
-        <div className="shrink-0 w-screen h-screen flex flex-col justify-center items-center relative p-8">
+        <div className={`flex flex-col justify-center items-center relative p-8 ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
             <div className="max-w-2xl w-full">
                 <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">Notes</h2>
                 
@@ -471,69 +492,106 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         </div>
       </motion.div>
       
-      {/* Index Button */}
-      <button 
-        onClick={() => setShowIndex(true)}
-        className="fixed bottom-8 right-8 z-40 p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all hover:scale-110 active:scale-95"
-      >
-        <Grid size={24} strokeWidth={1.5} />
-      </button>
+      {/* Mobile Logo - Hidden as requested */}
+      {/* Mobile Logo */}
+      {isMobile && (
+        <>
+            {/* Logo - Hidden as requested previously */}
+            {/* <div className="fixed top-4 left-4 z-50 opacity-30 pointer-events-none">
+            <h1 className="font-serif text-sm font-bold tracking-[0.2em] uppercase text-white">LATENT</h1>
+            </div> */}
 
-      {/* Index Modal */}
-      <AnimatePresence>
-        {showIndex && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed inset-0 z-50 bg-[#050505]/95 backdrop-blur-xl overflow-y-auto"
-          >
-             <div className="p-8 min-h-screen">
-                <div className="flex justify-end mb-8">
-                  <button 
-                    onClick={() => setShowIndex(false)}
-                    className="p-2 text-white/50 hover:text-white transition-colors"
-                  >
-                    <X size={32} strokeWidth={1} />
-                  </button>
-                </div>
+            {/* Mobile Comment Mode Toggle */}
+            <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2">
+                {isInspecting && (
+                    <div className="bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 mb-2 mr-1">
+                        <p className="text-[10px] font-sans tracking-widest uppercase text-white whitespace-nowrap">
+                            Tap photo to comment
+                        </p>
+                    </div>
+                )}
+                <button 
+                    onClick={() => setIsInspectingMobile(!isInspectingMobile)}
+                    className={`p-3 rounded-full backdrop-blur-md border transition-all shadow-lg active:scale-95 ${
+                        isInspectingMobile 
+                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]' 
+                        : 'bg-black/40 text-white/80 border-white/10'
+                    }`}
+                >
+                    <MessageSquare size={20} fill={isInspectingMobile ? "currentColor" : "none"} />
+                </button>
+            </div>
+        </>
+      )}
+
+      {/* Desktop Controls */}
+      {!isMobile && (
+        <>
+            {/* Index Button */}
+            <button 
+                onClick={() => setShowIndex(true)}
+                className="fixed bottom-8 right-8 z-40 p-4 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-all hover:scale-110 active:scale-95"
+            >
+                <Grid size={24} strokeWidth={1.5} />
+            </button>
+
+            {/* Index Modal */}
+            <AnimatePresence>
+                {showIndex && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    className="fixed inset-0 z-50 bg-[#050505]/95 backdrop-blur-xl overflow-y-auto"
+                >
+                    <div className="p-8 min-h-screen">
+                        <div className="flex justify-end mb-8">
+                        <button 
+                            onClick={() => setShowIndex(false)}
+                            className="p-2 text-white/50 hover:text-white transition-colors"
+                        >
+                            <X size={32} strokeWidth={1} />
+                        </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-7xl mx-auto">
+                        {photos.map((photo, idx) => (
+                            <div 
+                            key={photo.id}
+                            onClick={() => jumpToPhoto(idx)}
+                            className="aspect-square relative cursor-pointer group overflow-hidden bg-gray-900"
+                            >
+                            <Image
+                                src={photo.src}
+                                alt={photo.alt}
+                                fill
+                                className="object-cover transition-transform duration-500 group-hover:scale-110 opacity-70 group-hover:opacity-100"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <span className="bg-black/50 text-white px-3 py-1 text-xs font-serif uppercase tracking-widest backdrop-blur-sm">View</span>
+                            </div>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                </motion.div>
+                )}
+            </AnimatePresence>
+            
+            {/* Progress / Indicator */}
+            <div className="absolute bottom-12 left-0 right-0 flex justify-center gap-2 pointer-events-none">
+                {/* Simple dot for Preface */}
+                <div className={`h-1 rounded-full transition-all duration-300 ${activeIndex === 0 ? 'w-8 bg-white' : 'w-2 bg-gray-700'}`} />
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-7xl mx-auto">
-                   {photos.map((photo, idx) => (
-                     <div 
-                       key={photo.id}
-                       onClick={() => jumpToPhoto(idx)}
-                       className="aspect-square relative cursor-pointer group overflow-hidden bg-gray-900"
-                     >
-                       <Image
-                         src={photo.src}
-                         alt={photo.alt}
-                         fill
-                         className="object-cover transition-transform duration-500 group-hover:scale-110 opacity-70 group-hover:opacity-100"
-                       />
-                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          <span className="bg-black/50 text-white px-3 py-1 text-xs font-serif uppercase tracking-widest backdrop-blur-sm">View</span>
-                       </div>
-                     </div>
-                   ))}
-                </div>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
-      {/* Progress / Indicator (Optional: Hide or adapt? Let's hide active indicator for Preface for simplicity or just shift it) */}
-      <div className="absolute bottom-12 left-0 right-0 flex justify-center gap-2 pointer-events-none">
-         {/* Simple dot for Preface */}
-         <div className={`h-1 rounded-full transition-all duration-300 ${activeIndex === 0 ? 'w-8 bg-white' : 'w-2 bg-gray-700'}`} />
-         
-         {photos.map((_, idx) => (
-           <div 
-             key={idx} 
-             className={`h-1 rounded-full transition-all duration-300 ${idx + 1 === activeIndex ? 'w-8 bg-white' : 'w-2 bg-gray-700'}`}
-           />
-         ))}
-      </div>
+                {photos.map((_, idx) => (
+                <div 
+                    key={idx} 
+                    className={`h-1 rounded-full transition-all duration-300 ${idx + 1 === activeIndex ? 'w-8 bg-white' : 'w-2 bg-gray-700'}`}
+                />
+                ))}
+            </div>
+        </>
+      )}
     </div>
   );
 }

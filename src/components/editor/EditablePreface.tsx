@@ -130,24 +130,7 @@ export function EditablePreface({ title, description, onUpdate, items }: Editabl
                     className="font-sans text-gray-400 text-lg leading-relaxed bg-transparent outline-none resize-none text-center w-full h-48 placeholder:text-gray-600 focus:text-white transition-colors custom-scrollbar"
                 />
                 
-                {/* AI Generate Button */}
-                <button
-                    onClick={handleGeneratePreface}
-                    disabled={isGenerating || items.length === 0}
-                    className="absolute -bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-2 text-xs uppercase tracking-widest text-white/40 hover:text-white transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-                >
-                    {isGenerating ? (
-                        <>
-                            <Loader2 size={14} className="animate-spin" />
-                            <span>Curating...</span>
-                        </>
-                    ) : (
-                        <>
-                            <Sparkles size={14} />
-                            <span>Generate Preface with AI</span>
-                        </>
-                    )}
-                </button>
+                {/* AI Generate Button - Removed as requested */}
             </div>
         </div>
         
