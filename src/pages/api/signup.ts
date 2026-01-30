@@ -21,6 +21,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Email and password are required' })
     }
 
+    // Check if username exists to prevent "Database error creating new user"
+    if (username) {
+        const { data: existingUser, error: checkError } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('username', username)
+            .maybeSingle();
+            
+        if (existingUser) {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
+    }
+
     // Use Admin Client to create user with email automatically confirmed
     console.log('Creating user via Supabase Admin...');
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
