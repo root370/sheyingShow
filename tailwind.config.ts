@@ -9,8 +9,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        serif: ['var(--font-cormorant-garamond)', 'serif'],
-        sans: ['var(--font-manrope)', 'sans-serif'],
+        serif: ['var(--font-cormorant-garamond)', 'Songti SC', 'STSong', 'serif'],
+        sans: ['var(--font-manrope)', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

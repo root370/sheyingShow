@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
 import { Annotation } from '@/data/photos';
-import { MessageSquare, Target, Send, X, Sparkles, BrainCircuit } from 'lucide-react';
+import { MessageSquare, Target, Send, X, Sparkles, BrainCircuit, Trash2, Scan } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import ImageCard from './ImageCard';
+
+import PhotoBottomDeck from './PhotoBottomDeck';
 
 interface PhotoFrameProps {
   id?: string; // We need photo ID for annotations
@@ -15,6 +18,7 @@ interface PhotoFrameProps {
   title?: string;
   year?: string;
   file?: File; // The raw file for AI analysis
+  blurhash?: string; // New prop for BlurHash
   exif?: {
     ISO?: number;
     FNumber?: number;
@@ -25,11 +29,25 @@ interface PhotoFrameProps {
   };
   aspectRatio?: 'landscape' | 'portrait' | 'square';
   annotations?: Annotation[]; // Initial annotations if any
-  isInspecting?: boolean;
+  // Updated Prop
+  interactionMode?: 'none' | 'view' | 'add' | 'mixed';
+  
   skipDeveloping?: boolean;
   className?: string;
   contentMaxHeight?: string; // New prop for explicit image height constraint
   isMobile?: boolean;
+  enableAI?: boolean;
+  isOwner?: boolean;
+  onDevelop?: (id: string) => void;
+  onExpand?: () => void;
+  objectFit?: 'contain' | 'cover'; // New Prop for object-fit control
+  priority?: boolean; // New prop for eager loading
+  isActive?: boolean;
+  onNext?: () => void;
+  // Updated Prop
+  onModeChange?: (mode: 'none' | 'view' | 'add') => void;
+  
+  isLast?: boolean;
 }
 
 const PhotoFrame: React.FC<PhotoFrameProps> = ({ 
@@ -40,15 +58,31 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   title,
   year,
   file,
+  blurhash,
   exif,
   aspectRatio = 'landscape',
   annotations: initialAnnotations = [],
-  isInspecting = false,
+  interactionMode = 'none',
   skipDeveloping = false,
   className = '',
   contentMaxHeight,
-  isMobile = false
+  isMobile = false,
+  enableAI = true,
+  isOwner = false,
+  onDevelop,
+  onExpand,
+  objectFit = 'contain', // Default to contain
+  priority = false,
+  isActive = false,
+  onNext,
+  onModeChange,
+  isLast = false,
 }) => {
+  // Derived State for backward compatibility
+  const isInspecting = interactionMode !== 'none';
+  const canAddComment = interactionMode === 'add' || interactionMode === 'mixed';
+  const showComments = interactionMode === 'view' || interactionMode === 'mixed';
+
   // Developing State
   const [isDeveloped, setIsDeveloped] = useState(skipDeveloping); // If skipDeveloping is true, start as developed
 
@@ -61,6 +95,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   const [isHolding, setIsHolding] = useState(false);
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const [randomDelay, setRandomDelay] = useState(0);
+  const pressStartTime = useRef<number>(0);
 
   useEffect(() => {
     setRandomDelay(Math.random() * 2);
@@ -80,12 +115,51 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   const [draftDot, setDraftDot] = useState<{x: number, y: number} | null>(null);
   const [draftMessage, setDraftMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clickClientPos, setClickClientPos] = useState<{x: number, y: number} | null>(null);
 
   // Mouse Follower
   const mouseX = useRef(0);
   const mouseY = useRef(0);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
   const [mounted, setMounted] = useState(false);
+  
+  // Visibility Detection for HUD
+  const frameRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(frameRef, { amount: 0.4, margin: "0px 0px -10% 0px" }); // Slightly lenient
+  const shouldShowHUD = mounted && (isActive || isInView);
+
+  // Ghost Pin State
+  const [ghostPin, setGhostPin] = useState<{x: number, y: number} | null>(null);
+
+  // User State & Interaction
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [shakingAnnotationId, setShakingAnnotationId] = useState<string | null>(null);
+  const [localWarning, setLocalWarning] = useState<string | null>(null);
+  const [isShakingInput, setIsShakingInput] = useState(false);
+  const [showReadSheet, setShowReadSheet] = useState<string | null>(null); // Mobile Read Sheet ID
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) setCurrentUserId(user.id);
+    });
+  }, []);
+
+  const handleDeleteAnnotation = async (annotationId: string, e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      // Directly delete without confirmation as per user request
+      
+      const { error } = await supabase.from('annotations').delete().eq('id', annotationId);
+      if (!error) {
+          setRealAnnotations(prev => prev.filter(a => a.id !== annotationId));
+          // If we deleted the active one, close tooltip/sheet
+          if (activeTooltip === annotationId) setActiveTooltip(null);
+          if (showReadSheet === annotationId) setShowReadSheet(null);
+      } else {
+          console.error("Delete failed", error);
+          alert("Could not delete comment.");
+      }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -102,6 +176,26 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [isInspecting]);
+  
+  // Update Ghost Pin inside Image
+  const handleImageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isInspecting || isMobile || isOwner || draftDot) {
+          if (ghostPin) setGhostPin(null);
+          return;
+      }
+      
+      if (!e.currentTarget) return;
+      
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      setGhostPin({ x, y });
+  };
+  
+  const handleImageMouseLeave = () => {
+      setGhostPin(null);
+      cancelDeveloping();
+  };
 
   // Sound Effect
   const playDevelopSound = () => {
@@ -112,55 +206,153 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   };
 
   const startDeveloping = (e: React.PointerEvent | React.MouseEvent | React.TouchEvent) => {
-    if (isDeveloped || isInspecting) return;
-    // Don't trigger if clicking an annotation
-    if ((e.target as HTMLElement).closest('.annotation-dot')) return;
+    // Always record start time for tap detection
+    pressStartTime.current = Date.now();
 
-    // Prevent default browser behaviors like dragging or selection ONLY on desktop or specific cases
-    // On mobile, we MUST allow touchstart to propagate/default for scrolling to work, 
-    // unless we are sure we want to block it.
-    // Actually, to prevent context menu on long press, we use CSS. 
-    // To prevent text selection, we use CSS select-none.
-    // So we should NOT preventDefault on touchstart if we want scrolling.
-    if (!isMobile) {
-        e.preventDefault();
-    }
+    // Only start developing logic if NOT developed
+    if (!isDeveloped) {
+        // Don't trigger if clicking an annotation
+        if ((e.target as HTMLElement).closest('.annotation-dot')) return;
+        if (draftDot) return; // Don't develop if inputting
 
-    setIsHolding(true);
-    
-    // Haptics - Start
-    if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
-        try { navigator.vibrate(10); } catch(e) {}
-    }
-    
-    const duration = isMobile ? 2000 : 3000;
-
-    holdTimer.current = setTimeout(() => {
-        setIsDeveloped(true);
-        setIsHolding(false);
-        playDevelopSound();
-        
-        // Haptics - Completion
-        if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
-            try { navigator.vibrate(50); } catch(e) {}
+        // Prevent default browser behaviors like dragging or selection ONLY on desktop or specific cases
+        if (!isMobile) {
+            e.preventDefault();
         }
-    }, duration);
+
+        setIsHolding(true);
+        
+        // Haptics - Start
+        if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(10); } catch(e) {}
+        }
+        
+        const duration = 2000;
+
+        holdTimer.current = setTimeout(() => {
+            setIsDeveloped(true);
+            if (onDevelop && id) onDevelop(id);
+            setIsHolding(false);
+            playDevelopSound();
+            
+            // Haptics - Completion
+            if (isMobile && typeof navigator !== 'undefined' && navigator.vibrate) {
+                try { navigator.vibrate(50); } catch(e) {}
+            }
+        }, duration);
+    }
   };
 
   // Add a handler to cancel developing on scroll (touchmove)
   const handleTouchMove = () => {
+      // Invalidate tap detection if moving (scrolling)
+      if (pressStartTime.current) {
+          pressStartTime.current = 0;
+      }
+      
       if (isHolding) {
-          cancelDeveloping();
+          // Only cancel holding, don't trigger tap
+          if (holdTimer.current) {
+              clearTimeout(holdTimer.current);
+              holdTimer.current = null;
+          }
+          setIsHolding(false);
       }
   };
 
-  const cancelDeveloping = () => {
-    if (isDeveloped) return;
-    setIsHolding(false);
+  const cancelDeveloping = async (e?: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
+    // 1. Stop Developing Logic (Always stop timer)
     if (holdTimer.current) {
         clearTimeout(holdTimer.current);
         holdTimer.current = null;
     }
+    const wasHolding = isHolding;
+    setIsHolding(false);
+
+    // 2. Gesture Disambiguation Logic (Tap vs Hold)
+    // Only proceed if we have a valid press start time and event
+    if (pressStartTime.current && e) {
+        const pressDuration = Date.now() - pressStartTime.current;
+        pressStartTime.current = 0; // Reset
+
+        // If short press (< 200ms) AND wasn't a successful hold (developed)
+        // We allow tap even if isDeveloped is true
+        if (pressDuration < 200) {
+            // TAP DETECTED - Unified Logic
+            await handleTap(e);
+        }
+    }
+  };
+
+  const handleTap = async (e: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
+      // 1. Get Coordinates
+      let clientX: number | undefined;
+      let clientY: number | undefined;
+      
+      if ('changedTouches' in e) {
+          // TouchEvent
+          if (e.changedTouches.length > 0) {
+              clientX = e.changedTouches[0].clientX;
+              clientY = e.changedTouches[0].clientY;
+          }
+      } else if ('clientX' in e) {
+          // MouseEvent / PointerEvent
+          clientX = (e as React.MouseEvent).clientX;
+          clientY = (e as React.MouseEvent).clientY;
+      }
+
+      if (clientX === undefined || clientY === undefined) return;
+
+      // 2. Logic based on Mode
+      // VISITOR: Only allow marking if mode allows it
+      if (!canAddComment) {
+          // Not adding -> Expand to Full Screen (DESKTOP ONLY) or just do nothing if viewing
+          if (!isMobile && onExpand && interactionMode === 'none') {
+              onExpand();
+          }
+          return;
+      }
+
+      // INSPECTING: Add Annotation Logic
+      if (draftDot) return; 
+
+      // Calculate relative coordinates
+      const target = e.currentTarget as HTMLElement;
+      if (!target) return;
+      
+      const rect = target.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * 100;
+      const y = ((clientY - rect.top) / rect.height) * 100;
+
+      // 1. Constraint: One Mark Per Person
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          
+          if (user) {
+              const existingAnnotation = realAnnotations.find(a => a.user_id === user.id);
+              if (existingAnnotation) {
+                   // Block & Highlight
+                   setShakingAnnotationId(existingAnnotation.id);
+                   setTimeout(() => setShakingAnnotationId(null), 800); 
+
+                   // Toast Warning
+                   setLocalWarning("感知是独特的。每张照片您只能留下一条印记。");
+                   setTimeout(() => setLocalWarning(null), 3000);
+
+                   // Highlight existing
+                   setActiveTooltip(existingAnnotation.id);
+                   
+                   // Mobile: REMOVED auto-open sheet to prioritize the warning toast
+                   return;
+              }
+          }
+      } catch (err) {
+          console.error("PhotoFrame: Auth check failed", err);
+      }
+
+      setDraftDot({ x, y });
+      setDraftMessage('');
+      setClickClientPos({ x: clientX, y: clientY });
   };
 
   // Fetch annotations if ID exists
@@ -187,22 +379,72 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
     fetchAnnotations();
   }, [id]);
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isInspecting || draftDot) return; // Prevent multiple drafts
+  const handleImageClick = async (e: React.MouseEvent<HTMLDivElement>) => {
+    // VISITOR: Only allow marking if inspecting is ON
+    if (!isInspecting) {
+        if (onExpand) onExpand();
+        return;
+    }
+    if (draftDot) return; 
 
-    // Get coordinates relative to the image container
+    // Capture event properties synchronously
+    if (!e.currentTarget) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    
+    const x = ((clientX - rect.left) / rect.width) * 100;
+    const y = ((clientY - rect.top) / rect.height) * 100;
+
+    // 1. Constraint: One Mark Per Person
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+            const existingAnnotation = realAnnotations.find(a => a.user_id === user.id);
+            if (existingAnnotation) {
+                 // Block & Highlight
+                 setShakingAnnotationId(existingAnnotation.id);
+                 setTimeout(() => setShakingAnnotationId(null), 800); 
+
+                 // Toast Warning
+                 setLocalWarning("Perception is unique. You can only leave one mark per photo.");
+                 setTimeout(() => setLocalWarning(null), 3000);
+
+                 // Highlight existing
+                 setActiveTooltip(existingAnnotation.id);
+                 return;
+            }
+        }
+    } catch (err) {
+        console.error("PhotoFrame: Auth check failed", err);
+    }
 
     setDraftDot({ x, y });
     setDraftMessage('');
+    setClickClientPos({ x: clientX, y: clientY });
   };
 
   const cancelDraft = (e?: React.MouseEvent) => {
       e?.stopPropagation();
       setDraftDot(null);
       setDraftMessage('');
+      setClickClientPos(null);
+      setEditingAnnotationId(null);
+      
+      // Mobile: Exit Add Mode when closing the drawer
+      if (isMobile && onModeChange) {
+          onModeChange('none');
+      }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (e.target.value.length <= 50) {
+          setDraftMessage(e.target.value);
+      } else {
+          setIsShakingInput(true);
+          setTimeout(() => setIsShakingInput(false), 500);
+      }
   };
 
   const formatShutterSpeed = (t?: number) => {
@@ -217,7 +459,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
       
       if (!draftDot || !draftMessage.trim() || !id || isSubmitting) {
           console.log("Validation failed", { draftDot, msg: draftMessage, id, isSubmitting });
-          if (!id) alert("Error: Photo ID is missing. Cannot save comment.");
+          if (!id) alert("错误：照片ID丢失，无法保存评论。");
           return;
       }
 
@@ -225,7 +467,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-          alert("Please login to comment.");
+          alert("请先进入暗房以评论。");
           setIsSubmitting(false);
           return;
       }
@@ -241,7 +483,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
       if (!profile) {
            // Fallback or create if missing
-           username = user.user_metadata?.username || user.email?.split('@')[0] || 'Visitor';
+           username = user.user_metadata?.username || user.email?.split('@')[0] || '访客';
            const { error: createError } = await supabase
                .from('profiles')
                .insert({ id: user.id, username: username });
@@ -251,33 +493,62 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
            }
       }
 
-      const { data, error } = await supabase
-        .from('annotations')
-        .insert({
-            photo_id: id,
-            user_id: user.id,
-            x_coord: draftDot.x,
-            y_coord: draftDot.y,
-            message: draftMessage
-        })
-        .select()
-        .single();
-      
-      if (error) {
-          console.error("Failed to save annotation", error);
-          alert(`Failed to save: ${error.message}`);
-      } else if (data) {
-          // Optimistic update
-          setRealAnnotations(prev => [...prev, {
-              id: data.id,
-              x: data.x_coord,
-              y: data.y_coord,
-              text: data.message,
-              user_id: data.user_id,
-              username: username
-          }]);
-          setDraftDot(null);
-          setDraftMessage('');
+      if (editingAnnotationId) {
+          // UPDATE Existing Annotation
+          const { data, error } = await supabase
+            .from('annotations')
+            .update({
+                message: draftMessage,
+                // Optional: Update coordinates if we want to allow moving (currently draftDot is set to old pos)
+                // x_coord: draftDot.x,
+                // y_coord: draftDot.y
+            })
+            .eq('id', editingAnnotationId)
+            .select()
+            .single();
+
+          if (error) {
+              console.error("Failed to update annotation", error);
+              alert(`更新失败：${error.message}`);
+          } else if (data) {
+              setRealAnnotations(prev => prev.map(a => a.id === editingAnnotationId ? {
+                  ...a,
+                  text: data.message
+              } : a));
+              setDraftDot(null);
+              setDraftMessage('');
+              setEditingAnnotationId(null);
+          }
+      } else {
+          // CREATE New Annotation
+          const { data, error } = await supabase
+            .from('annotations')
+            .insert({
+                photo_id: id,
+                user_id: user.id,
+                x_coord: draftDot.x,
+                y_coord: draftDot.y,
+                message: draftMessage
+            })
+            .select()
+            .single();
+          
+          if (error) {
+              console.error("Failed to save annotation", error);
+              alert(`保存失败：${error.message}`);
+          } else if (data) {
+              // Optimistic update
+              setRealAnnotations(prev => [...prev, {
+                  id: data.id,
+                  x: data.x_coord,
+                  y: data.y_coord,
+                  text: data.message,
+                  user_id: data.user_id,
+                  username: username
+              }]);
+              setDraftDot(null);
+              setDraftMessage('');
+          }
       }
       setIsSubmitting(false);
   };
@@ -471,14 +742,14 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
         if (!res.ok) {
             const errData = await res.json();
-            throw new Error(errData.error || "Analysis failed");
+            throw new Error(errData.error || "分析失败");
         }
         
         const data = await res.json(); 
         setAnalysisResult(data);
     } catch (err: any) {
         console.error(err);
-        setAnalysisResult({ error: err.message || "Failed to analyze photo. Please try again." });
+        setAnalysisResult({ error: err.message || "分析照片失败，请重试。" });
     } finally {
         setIsAnalyzing(false);
     }
@@ -486,7 +757,11 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
   if (isMobile) {
     return (
-        <div className="relative w-full h-full bg-black overflow-hidden select-none">
+        <div 
+            ref={frameRef}
+            className="relative w-full h-full bg-black overflow-hidden select-none"
+            onClick={(e) => e.stopPropagation()}
+        >
             {/* Mobile AI Analysis Bottom Sheet */}
             {mounted && createPortal(
                 <AnimatePresence>
@@ -528,11 +803,11 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                 <div className="space-y-4">
                                                     <div className="flex justify-between items-center px-1">
                                                          <h4 className="text-[10px] font-sans font-semibold tracking-[0.2em] uppercase text-[#666666]">
-                                                            VISUAL ENHANCEMENT
+                                                            视觉增强
                                                          </h4>
                                                          {!isMobile && (
                                                              <div className="flex items-center gap-2">
-                                                                <span className="text-[9px] font-sans tracking-widest text-cyan-500/80 uppercase">Drag to Compare</span>
+                                                                <span className="text-[9px] font-sans tracking-widest text-cyan-500/80 uppercase">拖拽对比</span>
                                                              </div>
                                                          )}
                                                     </div>
@@ -548,7 +823,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                                     className="w-full h-full object-cover"
                                                                 />
                                                                 <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-sm border border-white/10">
-                                                                    <span className="text-[8px] text-white/80 font-sans tracking-widest uppercase">Original</span>
+                                                                    <span className="text-[8px] text-white/80 font-sans tracking-widest uppercase">原片</span>
                                                                 </div>
                                                             </div>
                                                             
@@ -595,14 +870,14 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                                 
                                                                 {/* Label: Original */}
                                                                 <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2 py-1 rounded-sm border border-white/10">
-                                                                    <span className="text-[9px] text-white/80 font-sans tracking-widest uppercase">Original</span>
+                                                                    <span className="text-[9px] text-white/80 font-sans tracking-widest uppercase">原片</span>
                                                                 </div>
                                                             </div>
 
                                                             {/* Label: Enhanced (on the right side) */}
                                                             <div className="absolute top-4 right-4 bg-cyan-950/60 backdrop-blur-md px-2 py-1 rounded-sm border border-cyan-500/20 pointer-events-none">
                                                                 <span className="text-[9px] text-cyan-200 font-sans tracking-widest uppercase flex items-center gap-1">
-                                                                    <Sparkles size={8} /> AI Enhanced
+                                                                    <Sparkles size={8} /> AI 增强
                                                                 </span>
                                                             </div>
 
@@ -628,7 +903,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                 <div className="text-red-400 font-mono text-xs">{analysisResult.error}</div>
                                             ) : (
                                                 <div className="font-mono text-[#CCC] text-xs leading-relaxed space-y-4">
-                                                     <h2 className="font-serif text-xl text-white mb-6 uppercase tracking-widest border-b border-white/10 pb-4">Analysis Report</h2>
+                                                     <h2 className="font-serif text-xl text-white mb-6 uppercase tracking-widest border-b border-white/10 pb-4">AI凝视</h2>
                                                      {parsedCritique?.overview && <p>{parsedCritique.overview}</p>}
                                                      {parsedCritique?.sections.map((s, i) => (
                                                          <div key={i} className="pt-4 border-t border-dashed border-white/10">
@@ -687,31 +962,364 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                             // IF the user means the text itself shouldn't have the breathing animation:
                             <div className="bg-black/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10">
                                 <p className="text-white/90 text-xs font-serif tracking-[0.2em] uppercase">
-                                    Hold to Develop
-                                </p>
-                            </div>
-                         ) : (
-                            <div className="bg-black/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10 animate-pulse">
-                                <p className="text-white/90 text-xs font-serif tracking-[0.2em] uppercase">
-                                    Hold to Develop
-                                </p>
-                            </div>
-                         )}
+                                        长按显影
+                                    </p>
+                                </div>
+                             ) : (
+                                <div className="bg-black/30 backdrop-blur-sm px-5 py-2 rounded-full border border-white/10 animate-pulse">
+                                    <p className="text-white/90 text-xs font-serif tracking-[0.2em] uppercase">
+                                        长按显影
+                                    </p>
+                                </div>
+                             )}
                     </div>
                 )}
                 
-                {/* AI Trigger */}
-                {isDeveloped && (
+                {/* AI Trigger / Mobile HUD - Portal to Body */}
+                {isMobile && shouldShowHUD && onNext && onModeChange && createPortal(
+                    <PhotoBottomDeck 
+                        onAnalyze={handleAnalyze}
+                        onModeChange={onModeChange}
+                        onNext={onNext}
+                        isAnalyzing={isAnalyzing}
+                        interactionMode={interactionMode === 'mixed' ? 'view' : interactionMode}
+                        isLast={isLast}
+                        commentCount={realAnnotations.length}
+                        showAI={enableAI && isDeveloped}
+                        showComments={isDeveloped || isOwner}
+                        hasUserComment={!!realAnnotations.find(a => a.user_id === currentUserId)}
+                        onDeleteComment={() => {
+                            const userNote = realAnnotations.find(a => a.user_id === currentUserId);
+                            if (userNote) handleDeleteAnnotation(userNote.id);
+                        }}
+                        onEditComment={() => {
+                            const userNote = realAnnotations.find(a => a.user_id === currentUserId);
+                            if (userNote) {
+                                // For Mobile: Open the existing bottom sheet for edit
+                                // Use Edit Mode: Set draft message to existing text, keep ID for UPDATE
+                                
+                                setDraftMessage(userNote.text);
+                                setEditingAnnotationId(userNote.id);
+                                // Trigger input mode at same location
+                                setDraftDot({ x: userNote.x, y: userNote.y });
+                                setClickClientPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 }); // Mock pos
+                            }
+                        }}
+                    />,
+                    document.body
+                )}
+
+                {/* Desktop AI Trigger - Portal to Body */}
+                {!isMobile && enableAI && isDeveloped && shouldShowHUD && createPortal(
                     <div 
-                        className="fixed bottom-4 left-0 right-0 flex justify-center z-50 pointer-events-auto"
+                        className="fixed bottom-6 left-6 z-50 pointer-events-auto"
                         onClick={handleAnalyze}
                     >
-                         <div className="flex flex-col items-center animate-bounce text-white/60 bg-black/20 p-2 rounded-lg backdrop-blur-sm">
-                             <span className="text-lg leading-none mb-1">^</span>
-                             <span className="text-[10px] uppercase tracking-widest">AI Analysis</span>
+                         <div className="flex items-center gap-2 text-white/90 bg-black/40 px-4 py-2 rounded-full backdrop-blur-md border border-white/10 shadow-lg hover:bg-black/60 transition-all active:scale-95">
+                             <Scan size={16} strokeWidth={1.5} />
+                             <span className="text-[10px] uppercase tracking-[0.2em] font-sans pt-0.5">AI凝视</span>
                          </div>
-                    </div>
+                    </div>,
+                    document.body
                 )}
+
+             {/* Annotations Layer - Only if Developed */}
+             <AnimatePresence>
+               {showComments && isDeveloped && realAnnotations.map((note) => {
+                 // Hide the annotation currently being edited to avoid visual duplication
+                 if (note.id === editingAnnotationId) return null;
+                 
+                 return (
+                 <motion.div
+                   key={note.id}
+                   initial={{ opacity: 0, scale: 0 }}
+                   animate={
+                       note.id === shakingAnnotationId 
+                       ? { 
+                           opacity: 1, 
+                           scale: 1, 
+                           x: [0, -5, 5, -5, 5, 0],
+                           transition: { duration: 0.4 }
+                         }
+                       : { opacity: 1, scale: 1 }
+                   }
+                   exit={{ opacity: 0, scale: 0 }}
+                   className="absolute z-20"
+                   style={{ left: `${note.x}%`, top: `${note.y}%` }}
+                 >
+                   {/* Glowing Dot - UPDATED VISUAL STYLE */}
+                   <motion.div
+                     className="relative w-6 h-6 -ml-3 -mt-3 cursor-pointer group/dot"
+                     animate={{ 
+                       boxShadow: ["0 0 0 0px rgba(255, 255, 255, 0.4)", "0 0 0 6px rgba(255, 255, 255, 0)"] 
+                     }}
+                     transition={{ 
+                       duration: 2, 
+                       repeat: Infinity,
+                       ease: "easeInOut"
+                     }}
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setActiveTooltip(activeTooltip === note.id ? null : note.id);
+                     }}
+                     onMouseEnter={() => !isMobile && setActiveTooltip(note.id)}
+                     onMouseLeave={() => !isMobile && setActiveTooltip(null)}
+                   >
+                     {/* Style: Translucent white dot with solid white center - INCREASED VISIBILITY */}
+                     <div className="w-full h-full bg-white/60 rounded-full flex items-center justify-center backdrop-blur-md group-hover/dot:bg-white transition-colors duration-300 shadow-sm">
+                        <div className="w-2 h-2 bg-white rounded-full group-hover/dot:bg-black transition-colors duration-300 shadow-sm" />
+                     </div>
+                   </motion.div>
+
+                   {/* Tooltip Card (Desktop) OR Bottom Sheet Trigger (Mobile) */}
+                   {isMobile ? (
+                       // Mobile: Visible Bubble + Invisible Trigger
+                       <>
+                           {/* Visible Mini Bubble for Mobile - Fully Expanded */}
+                          <motion.div
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="absolute top-4 left-1/2 -translate-x-1/2 w-auto min-w-[120px] max-w-[200px] pointer-events-none"
+                          >
+                              <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg px-3 py-2 shadow-xl">
+                                  <div className="mb-1 border-b border-white/10 pb-1 flex justify-between items-center gap-2">
+                                      <span className="text-[10px] text-white/70 font-sans tracking-wider uppercase truncate max-w-[100px]">
+                                          {note.username || 'VISITOR'}
+                                      </span>
+                                  </div>
+                                  <p className="text-xs text-white font-sans leading-relaxed text-left break-words">
+                                      {note.text}
+                                  </p>
+                                  {/* Triangle Arrow */}
+                                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/80 border-r border-b border-white/20 rotate-45" />
+                              </div>
+                          </motion.div>
+
+                           {/* Hit Area */}
+                           <div 
+                               className="absolute -inset-6 z-50"
+                               onClick={(e) => {
+                                   e.stopPropagation();
+                                   setShowReadSheet(note.id);
+                               }}
+                           />
+                       </>
+                   ) : (
+                       // Desktop: Always Visible Tooltip (Expanded)
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                          transition={{ duration: 0.2 }}
+                          className={`absolute top-6 left-1/2 -translate-x-1/2 w-auto min-w-[160px] max-w-[280px] bg-black/90 backdrop-blur-md border border-white/10 shadow-xl rounded-lg p-3 flex flex-col gap-2 pointer-events-auto z-[60] ${activeTooltip === note.id ? 'z-[70] ring-1 ring-white/30' : 'z-[60]'}`}
+                          onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTooltip(note.id);
+                          }}
+                          onMouseEnter={() => !isMobile && setActiveTooltip(note.id)}
+                        >
+                          {/* Header: User & Actions */}
+                          <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-1">
+                              <span className="text-[10px] uppercase text-white/70 tracking-wider font-sans truncate max-w-[120px]">
+                                  {note.username || 'VISITOR'}
+                              </span>
+                             
+                             {/* Delete Button (Owner or Author) */}
+                             {(isOwner || currentUserId === note.user_id) && (
+                                <button 
+                                    onClick={(e) => handleDeleteAnnotation(note.id, e)}
+                                    className="text-white/40 hover:text-red-400 transition-colors p-1 hover:bg-white/10 rounded-full"
+                                    title="移除印记"
+                                >
+                                    <Trash2 size={10} />
+                                </button>
+                             )}
+                         </div>
+
+                         {/* Content */}
+                         <p className="text-white text-xs font-sans leading-relaxed break-words">
+                             {note.text}
+                         </p>
+                       </motion.div>
+                   )}
+                 </motion.div>
+                 );
+               })}
+                
+                {/* Mobile Read Bottom Sheet */}
+                {isMobile && showReadSheet && mounted && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex flex-col justify-end" onClick={(e) => { e.stopPropagation(); setShowReadSheet(null); }}>
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div 
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "100%" }}
+                            className="relative bg-[#111] border-t border-white/10 p-6 pb-12 w-full rounded-t-2xl shadow-2xl z-10" 
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Sheet Handle */}
+                            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+
+                            {(() => {
+                                const note = realAnnotations.find(a => a.id === showReadSheet);
+                                if (!note) return null;
+                                return (
+                                    <div className="flex flex-col gap-4">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_10px_white]" />
+                                                <span className="text-xs font-serif text-white/50 tracking-widest uppercase">
+                                                    {note.username || 'VISITOR'}
+                                                </span>
+                                            </div>
+                                            {(isOwner || currentUserId === note.user_id) && (
+                                                <button 
+                                                    onClick={() => handleDeleteAnnotation(note.id)}
+                                                    className="text-white/30 hover:text-red-400 transition-colors p-2 -mr-2"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <p className="text-white text-lg font-serif leading-relaxed font-light">
+                                            {note.text}
+                                        </p>
+
+                                        <div className="text-[10px] text-white/20 font-mono mt-2">
+                                            COORD: {Math.round(note.x)}, {Math.round(note.y)}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </motion.div>
+                    </div>,
+                    document.body
+                )}
+
+                {/* Draft Dot & Input Popover */}
+                {draftDot && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="absolute z-30"
+                            style={{ left: `${draftDot.x}%`, top: `${draftDot.y}%` }}
+                            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking input
+                        >
+                            {/* The Dot */}
+                            <div className="w-4 h-4 -ml-2 -mt-2 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse" />
+                            
+                            {/* Desktop Input Popover - Moved to Portal below */}
+                            {/* {!isMobile && (...)} */}
+                        </motion.div>
+
+                        {/* Desktop Input Popover (Portal) */}
+                        {!isMobile && draftDot && clickClientPos && mounted && createPortal(
+                            <div 
+                                className="fixed z-[9999]"
+                                style={{ 
+                                    left: clickClientPos.x, 
+                                    top: clickClientPos.y + 20 
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <motion.div 
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    className="bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-sm shadow-2xl w-64 -translate-x-1/2"
+                                >
+                                    <form onSubmit={saveAnnotation}>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-serif text-gray-400 tracking-widest uppercase">添加评论</span>
+                                            <span className={`text-[10px] font-mono ${draftMessage.length >= 50 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {draftMessage.length}/50
+                                            </span>
+                                            <button type="button" onClick={(e) => cancelDraft(e)} className="text-gray-500 hover:text-white transition-colors">
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                        <motion.textarea
+                                            animate={isShakingInput ? { x: [-2, 2, -2, 2, 0] } : { x: 0 }}
+                                            transition={{ duration: 0.4 }}
+                                            autoFocus
+                                            value={draftMessage}
+                                            onChange={handleInputChange}
+                                            className="w-full bg-white/5 border border-white/10 rounded-sm p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[60px] resize-none mb-2 font-sans"
+                                            placeholder="限制50字..."
+                                        />
+                                        <div className="flex justify-end">
+                                            <button 
+                                                type="submit" 
+                                                disabled={isSubmitting || !draftMessage.trim()}
+                                                className="bg-white text-black text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-sm hover:bg-cyan-400 hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                {isSubmitting ? '保存中...' : '发布'}
+                                                {!isSubmitting && <Send size={10} />}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </motion.div>
+                            </div>,
+                            document.body
+                        )}
+
+                        {/* Mobile Input Bottom Sheet */}
+                        {isMobile && mounted && createPortal(
+                            <div className="fixed inset-0 z-[100] flex flex-col justify-end" onClick={(e) => { e.stopPropagation(); cancelDraft(); }}>
+                                <motion.div 
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                                />
+                                <motion.div 
+                                    initial={{ y: "100%" }}
+                                    animate={{ y: 0 }}
+                                    exit={{ y: "100%" }}
+                                    className="relative bg-[#111] border-t border-white/10 p-6 pb-8 w-full rounded-t-2xl shadow-2xl z-10" 
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <form onSubmit={saveAnnotation}>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <span className="text-xs font-serif text-white tracking-widest uppercase">添加评论</span>
+                                            <span className={`text-[10px] font-mono ${draftMessage.length >= 50 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {draftMessage.length}/50
+                                            </span>
+                                            <button type="button" onClick={(e) => cancelDraft(e)} className="text-white/50 hover:text-white p-2">
+                                                <X size={20} />
+                                            </button>
+                                        </div>
+                                        <motion.textarea
+                                            animate={isShakingInput ? { x: [-2, 2, -2, 2, 0] } : { x: 0 }}
+                                            transition={{ duration: 0.4 }}
+                                            autoFocus
+                                            value={draftMessage}
+                                            onChange={handleInputChange}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg p-4 text-base text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[100px] resize-none mb-4 font-sans"
+                                            placeholder="用50个字描述这一刻..."
+                                        />
+                                        <button 
+                                            type="submit" 
+                                            disabled={isSubmitting || !draftMessage.trim()}
+                                            className="w-full bg-white text-black text-sm font-bold uppercase tracking-wider py-4 rounded-full hover:bg-cyan-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                        >
+                                            {isSubmitting ? '保存中...' : '发布评论'}
+                                            {!isSubmitting && <Send size={14} />}
+                                        </button>
+                                    </form>
+                                </motion.div>
+                            </div>,
+                            document.body
+                        )}
+                    </>
+                )}
+             </AnimatePresence>
             </div>
         </div>
     );
@@ -760,9 +1368,9 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                         <div className="relative z-10 flex justify-between items-center px-8 py-6 border-b border-white/5">
                             <div className="flex items-center gap-3">
                                 <div className="p-1.5 rounded-full bg-cyan-950/30 border border-cyan-900/50 shadow-[0_0_15px_-3px_rgba(8,145,178,0.4)]">
-                                    <Sparkles className="text-cyan-200" size={16} strokeWidth={1.5} />
+                                    <Scan className="text-cyan-200" size={16} strokeWidth={1.5} />
                                 </div>
-                                <h3 className="text-lg font-sans font-medium tracking-wide text-[#FDFDFD]">AI CRITIQUE</h3>
+                                <h3 className="text-lg font-sans font-medium tracking-wide text-[#FDFDFD]">AI凝视</h3>
                             </div>
                             <button 
                                 onClick={() => setShowAnalysis(false)} 
@@ -798,14 +1406,14 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
                                         {analysisResult.error ? (
                                             <div className="text-red-300 text-xs text-center p-6 border border-dashed border-red-900/30 bg-red-950/10 font-mono">
-                                                ERROR: {analysisResult.error}
+                                                错误：{analysisResult.error}
                                             </div>
                                         ) : (
                                             <>
                                                 {/* Header Metadata */}
                                                 <div className="flex justify-between items-end border-b border-dashed border-white/10 pb-4">
                                                     <div>
-                                                        <h2 className="text-xl font-serif text-[#F0F0F0] tracking-widest uppercase">ANALYSIS REPORT</h2>
+                                                        <h2 className="text-xl font-serif text-[#F0F0F0] tracking-widest uppercase">AI凝视</h2>
                                                         <span className="text-[9px] text-[#666] block mt-1">ID: {id?.slice(0,8).toUpperCase() || 'UNKNOWN'} // GEN-V1</span>
                                                     </div>
                                                 </div>
@@ -815,7 +1423,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                     <div className="space-y-2 pb-4 border-b border-dashed border-white/10">
                                                         <div className="flex justify-between items-center">
                                                             <h4 className="text-[10px] font-sans font-bold tracking-[0.2em] uppercase text-[#888] bg-white/5 px-2 py-0.5 inline-block">
-                                                                OVERVIEW
+                                                                概览
                                                             </h4>
                                                             <span className="text-[8px] text-[#444] font-mono">SECT-01</span>
                                                         </div>
@@ -856,7 +1464,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                 
                                                 {/* Receipt Bottom Footer */}
                                                 <div className="pt-4 flex justify-between items-center opacity-30">
-                                                    <span className="text-[8px] font-mono">END OF REPORT</span>
+                                                    <span className="text-[8px] font-mono">报告结束</span>
                                                     <div className="h-px w-12 bg-white" />
                                                 </div>
                                             </>
@@ -869,10 +1477,10 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-center px-1">
                                                      <h4 className="text-[10px] font-sans font-semibold tracking-[0.2em] uppercase text-[#666666]">
-                                                        VISUAL ENHANCEMENT
+                                                        视觉增强
                                                      </h4>
                                                      <div className="flex items-center gap-2">
-                                                        <span className="text-[9px] font-sans tracking-widest text-cyan-500/80 uppercase">Drag to Compare</span>
+                                                        <span className="text-[9px] font-sans tracking-widest text-cyan-500/80 uppercase">拖拽对比</span>
                                                      </div>
                                                 </div>
 
@@ -904,14 +1512,14 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                         
                                                         {/* Label: Original */}
                                                         <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-2 py-1 rounded-sm border border-white/10">
-                                                            <span className="text-[9px] text-white/80 font-sans tracking-widest uppercase">Original</span>
+                                                            <span className="text-[9px] text-white/80 font-sans tracking-widest uppercase">原片</span>
                                                         </div>
                                                     </div>
 
                                                     {/* Label: Enhanced (on the right side) */}
                                                     <div className="absolute top-4 right-4 bg-cyan-950/60 backdrop-blur-md px-2 py-1 rounded-sm border border-cyan-500/20 pointer-events-none">
                                                         <span className="text-[9px] text-cyan-200 font-sans tracking-widest uppercase flex items-center gap-1">
-                                                            <Sparkles size={8} /> AI Enhanced
+                                                            <Sparkles size={8} /> AI 增强
                                                         </span>
                                                     </div>
 
@@ -934,7 +1542,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                     <div className="mt-2 pt-4 border-t border-white/5">
                                                         <h4 className="text-[10px] font-sans font-semibold tracking-[0.2em] uppercase text-[#555555] mb-2 flex items-center gap-2">
                                                             <BrainCircuit size={12} />
-                                                            Generation Notes
+                                                            生成说明
                                                         </h4>
                                                         <div className="bg-[#0F0F0F] border border-white/5 rounded-sm p-4 text-[#888888] font-serif text-xs leading-relaxed italic">
                                                             {analysisResult.comparison}
@@ -961,7 +1569,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
       {/* Matte Board */}
       <div 
-        className={`relative bg-[#Fdfdfd] p-4 md:p-6 transition-all duration-500 ease-out flex flex-col justify-center items-center rounded-[2px] ${className}`}
+        className={`relative bg-[#Fdfdfd] p-4 md:p-6 transition-all duration-500 ease-out flex flex-col justify-center items-center rounded-[2px] ${isDeveloped ? 'overflow-visible' : 'overflow-hidden'} ${className}`}
         style={{
           boxShadow: '0 4px 8px -2px rgba(0, 0, 0, 0.5), 0 15px 30px -5px rgba(0, 0, 0, 0.4), 0 35px 70px -10px rgba(0, 0, 0, 0.3)',
           // Consistent height constraint logic
@@ -979,21 +1587,31 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
         />
 
         {/* AI Analysis Button - Moved inside Matte Board for better positioning context */}
-        {isDeveloped && (
+        {/* {enableAI && isDeveloped && (
             <button
                 onClick={handleAnalyze}
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute top-2 right-2 z-[60] p-2 bg-black/10 backdrop-blur-sm text-black/60 rounded-full transition-all duration-300 hover:bg-black hover:text-white border border-black/5 hover:scale-110"
-                title="AI Critique"
-                style={{ pointerEvents: 'auto' }} 
+                ...
             >
                 <Sparkles size={14} />
             </button>
+        )} */}
+        
+        {/* Portal AI Trigger for Desktop */}
+        {!isMobile && enableAI && isDeveloped && shouldShowHUD && createPortal(
+            <div 
+                className="fixed bottom-6 left-6 z-50 pointer-events-auto"
+                onClick={handleAnalyze}
+            >
+                    <div className="flex items-center gap-2 text-white/90 bg-black/40 px-4 py-2 rounded-full backdrop-blur-md border border-white/10 shadow-lg hover:bg-black/60 transition-all active:scale-95">
+                        <Scan size={16} strokeWidth={1.5} />
+                        <span className="text-[10px] uppercase tracking-[0.2em] font-sans pt-0.5">AI凝视</span>
+                    </div>
+            </div>,
+            document.body
         )}
 
         {/* Image Container */}
-        <div className="relative overflow-hidden w-auto h-full flex flex-col justify-center">
+        <div className={`relative w-full h-full flex flex-col justify-center ${isDeveloped ? 'overflow-visible' : 'overflow-hidden'}`}>
           {/* Latent State Overlay - Press & Hold Prompt */}
           {!isDeveloped && !isHolding && (
             <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
@@ -1004,7 +1622,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                     className="bg-black/40 backdrop-blur-sm px-6 py-3 rounded-full border border-white/20"
                 >
                     <p className="text-white text-xs font-serif tracking-[0.2em] uppercase animate-pulse">
-                        Press & Hold to Develop
+                        长按显影
                     </p>
                 </motion.div>
             </div>
@@ -1012,27 +1630,30 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
           {/* Progress Bar (Red Line) */}
           <div className={`absolute bottom-0 left-0 h-1 bg-red-600 z-30 transition-all ease-linear ${isHolding && !isDeveloped ? 'w-full opacity-100' : 'w-0 opacity-0'}`}
-               style={{ transitionDuration: '1000ms' }}
+               style={{ transitionDuration: '2000ms' }}
           />
 
 
           <div 
-            className={`relative z-10 ${isInspecting && isDeveloped ? 'cursor-none' : 'cursor-pointer'} flex justify-center items-center w-full h-full`}
+            className={`relative z-10 ${isInspecting && isDeveloped ? (isOwner ? 'cursor-default' : 'cursor-crosshair') : 'cursor-pointer'} flex justify-center items-center w-full h-full`}
             style={{
                 maxHeight: '100%',
                 maxWidth: '100%'
             }}
-            onClick={isDeveloped ? handleImageClick : undefined}
+            // onClick={isDeveloped ? handleImageClick : undefined} // REPLACED BY handleTap in cancelDeveloping
             onMouseDown={startDeveloping}
             onMouseUp={cancelDeveloping}
-            onMouseLeave={cancelDeveloping}
+            onMouseLeave={handleImageMouseLeave}
+            onMouseMove={handleImageMouseMove}
             onTouchStart={startDeveloping}
             onTouchEnd={cancelDeveloping}
           >
-            <img
+            <ImageCard
               src={src}
               alt={alt}
-              loading="lazy"
+              blurhash={blurhash}
+              aspectRatio={aspectRatio}
+              loading={priority ? "eager" : "lazy"}
               draggable={false}
               className="w-auto h-auto block object-contain select-none"
               style={{
@@ -1042,33 +1663,29 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                 filter: isDeveloped || isHolding 
                     ? (isInspecting ? 'brightness(0.9)' : 'grayscale(0%) brightness(100%) blur(0px) contrast(100%)')
                     : 'grayscale(100%) brightness(20%) blur(10px) contrast(120%)',
-                transition: 'filter 3s ease-in-out'
+                transition: 'filter 2s ease-in-out',
+                height: '100%',
+                width: 'auto'
               }}
             />
              {/* Inner Shadow Overlay - Beveled Mat Effect */}
              <div className="absolute inset-0 shadow-[inset_3px_3px_6px_-2px_rgba(0,0,0,0.4)] pointer-events-none" />
 
-             {/* Custom Cursor for Inspection - Portal to Body to avoid Transform issues */}
+             {/* Custom Cursor for Inspection - REMOVED since we use cursor-crosshair */}
+             {/* 
              {mounted && isInspecting && isDeveloped && createPortal(
-               <div 
-                 className="fixed pointer-events-none z-[9999] text-white drop-shadow-md flex items-center gap-3"
-                 style={{
-                   left: cursorPos.x,
-                   top: cursorPos.y,
-                   transform: 'translate(15px, 15px)' // Offset to bottom-right of cursor
-                 }}
-               >
-                  {/* Cursor Visual */}
-                  <Target className="text-cyan-400 animate-pulse" size={24} strokeWidth={1.5} />
-                  
-                  {/* Instruction Text */}
-                  <div className="bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10">
-                      <p className="text-[10px] font-sans tracking-widest uppercase text-white whitespace-nowrap">
-                          Click to Comment
-                      </p>
-                  </div>
-               </div>,
-               document.body
+               ...
+             )}
+             */}
+             
+             {/* Ghost Pin - Only for Visitor in Marking Mode */}
+             {ghostPin && isDeveloped && !isOwner && !draftDot && (
+                 <div 
+                     className="absolute z-10 pointer-events-none opacity-50"
+                     style={{ left: `${ghostPin.x}%`, top: `${ghostPin.y}%` }}
+                 >
+                     <div className="w-4 h-4 -ml-2 -mt-2 bg-white/30 rounded-full border border-white/50" />
+                 </div>
              )}
              
              {/* Annotations Layer - Only if Developed */}
@@ -1077,16 +1694,25 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                  <motion.div
                    key={note.id}
                    initial={{ opacity: 0, scale: 0 }}
-                   animate={{ opacity: 1, scale: 1 }}
+                   animate={
+                       note.id === shakingAnnotationId 
+                       ? { 
+                           opacity: 1, 
+                           scale: 1, 
+                           x: [0, -5, 5, -5, 5, 0],
+                           transition: { duration: 0.4 }
+                         }
+                       : { opacity: 1, scale: 1 }
+                   }
                    exit={{ opacity: 0, scale: 0 }}
                    className="absolute z-20"
                    style={{ left: `${note.x}%`, top: `${note.y}%` }}
                  >
-                   {/* Glowing Dot */}
+                   {/* Glowing Dot - UPDATED VISUAL STYLE */}
                    <motion.div
-                     className="relative w-4 h-4 -ml-2 -mt-2 cursor-pointer"
+                     className="relative w-6 h-6 -ml-3 -mt-3 cursor-pointer group/dot"
                      animate={{ 
-                       boxShadow: ["0 0 0 0px rgba(6, 182, 212, 0.4)", "0 0 0 8px rgba(6, 182, 212, 0)"] // Cyan glow
+                       boxShadow: ["0 0 0 0px rgba(255, 255, 255, 0.4)", "0 0 0 6px rgba(255, 255, 255, 0)"] 
                      }}
                      transition={{ 
                        duration: 2, 
@@ -1097,26 +1723,121 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                        e.stopPropagation();
                        setActiveTooltip(activeTooltip === note.id ? null : note.id);
                      }}
+                     onMouseEnter={() => !isMobile && setActiveTooltip(note.id)}
+                     onMouseLeave={() => !isMobile && setActiveTooltip(null)}
                    >
-                     <div className="w-full h-full bg-cyan-400 rounded-full shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
+                     {/* Style: Translucent white dot with solid white center - INCREASED VISIBILITY */}
+                     <div className="w-full h-full bg-white/60 rounded-full flex items-center justify-center backdrop-blur-md group-hover/dot:bg-white transition-colors duration-300 shadow-sm">
+                        <div className="w-2 h-2 bg-white rounded-full group-hover/dot:bg-black transition-colors duration-300 shadow-sm" />
+                     </div>
                    </motion.div>
 
-                   {/* Tooltip */}
-                   <AnimatePresence>
-                     {activeTooltip === note.id && (
+                   {/* Tooltip Card (Desktop) OR Bottom Sheet Trigger (Mobile) */}
+                   {isMobile ? (
+                       // Mobile: Invisible Trigger Area for Bottom Sheet
+                       <div 
+                           className="absolute -inset-4 z-50"
+                           onClick={(e) => {
+                               e.stopPropagation();
+                               setShowReadSheet(note.id);
+                           }}
+                       />
+                   ) : (
+                       // Desktop: Hover Tooltip
                        <motion.div
-                         initial={{ opacity: 0, y: 10 }}
-                         animate={{ opacity: 1, y: 0 }}
-                         exit={{ opacity: 0, y: 10 }}
-                         className="absolute top-6 left-1/2 -translate-x-1/2 w-48 bg-black/90 backdrop-blur-md text-white text-xs p-3 rounded-sm border border-white/10 font-sans z-30 pointer-events-none shadow-xl"
+                         initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                         animate={{ opacity: 1, scale: 1, y: 0 }}
+                         exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                         transition={{ duration: 0.2 }}
+                         className={`absolute top-6 left-1/2 -translate-x-1/2 w-48 bg-black/90 backdrop-blur-md border border-white/10 shadow-xl rounded-sm p-3 flex flex-col gap-2 pointer-events-auto z-[60] ${activeTooltip === note.id ? 'z-[70]' : 'z-[60]'}`}
+                         onClick={(e) => {
+                             e.stopPropagation();
+                             setActiveTooltip(note.id);
+                         }}
+                         onMouseEnter={() => !isMobile && setActiveTooltip(note.id)}
                        >
-                         <div className="font-serif text-[10px] text-cyan-400 mb-1 tracking-wider uppercase">COMMENT</div>
-                         {note.text}
+                         {/* Header: User & Actions */}
+                         <div className="flex justify-between items-center border-b border-white/10 pb-1 mb-1">
+                             <span className="text-[10px] uppercase text-white/60 tracking-wider font-sans truncate max-w-[80%]">
+                                 {note.username || 'VISITOR'}
+                             </span>
+                             
+                             {/* Delete Button (Owner or Author) */}
+                             {(isOwner || currentUserId === note.user_id) && (
+                                <button 
+                                    onClick={(e) => handleDeleteAnnotation(note.id, e)}
+                                    className="text-white/40 hover:text-red-400 transition-colors p-1 hover:bg-white/10 rounded-full"
+                                    title="移除印记"
+                                >
+                                    <Trash2 size={10} />
+                                </button>
+                             )}
+                         </div>
+
+                         {/* Content */}
+                         <p className="text-white text-xs font-sans leading-relaxed break-words">
+                             {note.text}
+                         </p>
                        </motion.div>
-                     )}
-                   </AnimatePresence>
+                   )}
                  </motion.div>
                ))}
+                
+                {/* Mobile Read Bottom Sheet */}
+                {isMobile && showReadSheet && mounted && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex flex-col justify-end" onClick={(e) => { e.stopPropagation(); setShowReadSheet(null); }}>
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        />
+                        <motion.div 
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "100%" }}
+                            className="relative bg-[#111] border-t border-white/10 p-6 pb-12 w-full rounded-t-2xl shadow-2xl z-10" 
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Sheet Handle */}
+                            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6" />
+
+                            {(() => {
+                                const note = realAnnotations.find(a => a.id === showReadSheet);
+                                if (!note) return null;
+                                return (
+                                    <div className="flex flex-col gap-4">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_10px_white]" />
+                                                <span className="text-xs font-serif text-white/50 tracking-widest uppercase">
+                                                    {note.username || 'VISITOR'}
+                                                </span>
+                                            </div>
+                                            {(isOwner || currentUserId === note.user_id) && (
+                                                <button 
+                                                    onClick={() => handleDeleteAnnotation(note.id)}
+                                                    className="text-white/30 hover:text-red-400 transition-colors p-2 -mr-2"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        
+                                        <p className="text-white text-lg font-serif leading-relaxed font-light">
+                                            {note.text}
+                                        </p>
+
+                                        <div className="text-[10px] text-white/20 font-mono mt-2">
+                                            COORD: {Math.round(note.x)}, {Math.round(note.y)}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </motion.div>
+                    </div>,
+                    document.body
+                )}
 
                 {/* Draft Dot & Input Popover */}
                 {draftDot && (
@@ -1131,22 +1852,43 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                             {/* The Dot */}
                             <div className="w-4 h-4 -ml-2 -mt-2 bg-white rounded-full shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse" />
                             
-                            {/* Desktop Input Popover */}
-                            {!isMobile && (
-                                <div className="absolute top-6 left-1/2 -translate-x-1/2 w-64 bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-sm shadow-2xl">
+                            {/* Desktop Input Popover - Moved to Portal below */}
+                            {/* {!isMobile && (...)} */}
+                        </motion.div>
+
+                        {/* Desktop Input Popover (Portal) */}
+                        {!isMobile && draftDot && clickClientPos && mounted && createPortal(
+                            <div 
+                                className="fixed z-[9999]"
+                                style={{ 
+                                    left: clickClientPos.x, 
+                                    top: clickClientPos.y + 20 
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <motion.div 
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    className="bg-black/90 backdrop-blur-xl border border-white/20 p-4 rounded-sm shadow-2xl w-64 -translate-x-1/2"
+                                >
                                     <form onSubmit={saveAnnotation}>
                                         <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-serif text-gray-400 tracking-widest uppercase">ADD COMMENT</span>
+                                            <span className="text-[10px] font-serif text-gray-400 tracking-widest uppercase">添加评论</span>
+                                            <span className={`text-[10px] font-mono ${draftMessage.length >= 50 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {draftMessage.length}/50
+                                            </span>
                                             <button type="button" onClick={(e) => cancelDraft(e)} className="text-gray-500 hover:text-white transition-colors">
                                                 <X size={12} />
                                             </button>
                                         </div>
-                                        <textarea
+                                        <motion.textarea
+                                            animate={isShakingInput ? { x: [-2, 2, -2, 2, 0] } : { x: 0 }}
+                                            transition={{ duration: 0.4 }}
                                             autoFocus
                                             value={draftMessage}
-                                            onChange={(e) => setDraftMessage(e.target.value)}
+                                            onChange={handleInputChange}
                                             className="w-full bg-white/5 border border-white/10 rounded-sm p-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[60px] resize-none mb-2 font-sans"
-                                            placeholder="What catches your eye?"
+                                            placeholder="限制50字..."
                                         />
                                         <div className="flex justify-end">
                                             <button 
@@ -1154,14 +1896,15 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                                 disabled={isSubmitting || !draftMessage.trim()}
                                                 className="bg-white text-black text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-sm hover:bg-cyan-400 hover:text-black transition-colors disabled:opacity-50 flex items-center gap-1"
                                             >
-                                                {isSubmitting ? 'SAVING...' : 'POST'}
+                                                {isSubmitting ? '保存中...' : '发布'}
                                                 {!isSubmitting && <Send size={10} />}
                                             </button>
                                         </div>
                                     </form>
-                                </div>
-                            )}
-                        </motion.div>
+                                </motion.div>
+                            </div>,
+                            document.body
+                        )}
 
                         {/* Mobile Input Bottom Sheet */}
                         {isMobile && mounted && createPortal(
@@ -1181,24 +1924,29 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                 >
                                     <form onSubmit={saveAnnotation}>
                                         <div className="flex justify-between items-center mb-4">
-                                            <span className="text-xs font-serif text-white tracking-widest uppercase">Add Comment</span>
+                                            <span className="text-xs font-serif text-white tracking-widest uppercase">添加评论</span>
+                                            <span className={`text-[10px] font-mono ${draftMessage.length >= 50 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {draftMessage.length}/50
+                                            </span>
                                             <button type="button" onClick={(e) => cancelDraft(e)} className="text-white/50 hover:text-white p-2">
                                                 <X size={20} />
                                             </button>
                                         </div>
-                                        <textarea
+                                        <motion.textarea
+                                            animate={isShakingInput ? { x: [-2, 2, -2, 2, 0] } : { x: 0 }}
+                                            transition={{ duration: 0.4 }}
                                             autoFocus
                                             value={draftMessage}
-                                            onChange={(e) => setDraftMessage(e.target.value)}
+                                            onChange={handleInputChange}
                                             className="w-full bg-white/5 border border-white/10 rounded-lg p-4 text-base text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 min-h-[100px] resize-none mb-4 font-sans"
-                                            placeholder="What catches your eye?"
+                                            placeholder="用50个字描述这一刻..."
                                         />
                                         <button 
                                             type="submit" 
                                             disabled={isSubmitting || !draftMessage.trim()}
                                             className="w-full bg-white text-black text-sm font-bold uppercase tracking-wider py-4 rounded-full hover:bg-cyan-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                                         >
-                                            {isSubmitting ? 'Saving...' : 'Post Comment'}
+                                            {isSubmitting ? '保存中...' : '发布评论'}
                                             {!isSubmitting && <Send size={14} />}
                                         </button>
                                     </form>
@@ -1247,6 +1995,23 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
             </div>
           )}
         </motion.div>
+
+        {/* Local Warning Toast (One Mark Rule) - PORTAL for Global Visibility */}
+        {mounted && localWarning && createPortal(
+            <AnimatePresence>
+                <motion.div
+                    initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                    className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-black/90 backdrop-blur-md px-6 py-4 rounded-lg border border-white/10 shadow-2xl pointer-events-none max-w-[80vw] text-center"
+                >
+                    <p className="text-white text-xs font-serif tracking-widest leading-relaxed">
+                        {localWarning}
+                    </p>
+                </motion.div>
+            </AnimatePresence>,
+            document.body
+        )}
       </div>
     </div>
   );

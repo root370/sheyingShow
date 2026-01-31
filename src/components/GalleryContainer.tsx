@@ -5,10 +5,12 @@ import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-mo
 import PhotoFrame from './PhotoFrame';
 import { Photo } from '@/data/photos';
 import { useInspectionMode } from '@/hooks/useInspectionMode';
-import { Grid, X, Send, MessageSquare } from 'lucide-react';
+import { Grid, X, Send, MessageSquare, ChevronsDown } from 'lucide-react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
+import LoginModal from './LoginModal';
+import VerticalProgressBar from './VerticalProgressBar';
 
 const LightRays = dynamic(() => import('./LightRays'), { ssr: false });
 
@@ -35,6 +37,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   // Interaction State
   const [activeIndex, setActiveIndex] = useState(0);
   const [showIndex, setShowIndex] = useState(false);
+  const [fullScreenPhoto, setFullScreenPhoto] = useState<Photo | null>(null);
 
   // Guestbook State
   const [guestbookEntries, setGuestbookEntries] = useState<any[]>([]);
@@ -42,10 +45,29 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   const [sending, setSending] = useState(false);
   const [isSent, setIsSent] = useState(false); // Track success state for animation
 
+  const [isAuthor, setIsAuthor] = useState(initialIsAuthor);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // State for Login Modal
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Mobile Interaction Reset Logic
+  useEffect(() => {
+    // When active index changes, reset mobile inspection mode to keep it clean
+    if (isMobile && !isAuthor) {
+        setMobileInteractionMode('none');
+    }
+  }, [activeIndex, isMobile, isAuthor]);
+
   // Inspection Mode
-  const isInspectingKey = useInspectionMode();
-  const [isInspectingMobile, setIsInspectingMobile] = useState(false);
-  const isInspecting = isInspectingKey || isInspectingMobile;
+  // const isInspectingKey = useInspectionMode(); // Removed Spacebar listener
+  const [isInspectingDesktop, setIsInspectingDesktop] = useState(false);
+  const [mobileInteractionMode, setMobileInteractionMode] = useState<'none' | 'view' | 'add'>('none');
+  
+  // Combine logic: 
+  // Mobile: mobileInteractionMode
+  // Desktop: isInspectingDesktop -> 'mixed' (Legacy support for desktop until refactor)
+  const interactionMode = isMobile ? mobileInteractionMode : (isInspectingDesktop ? 'mixed' : 'none');
   
   // Spotlight Colors (Preface is index 0)
   const activeColor = activeIndex === 0 ? '#050505' : photos[activeIndex - 1]?.color || '#050505';
@@ -53,8 +75,77 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   // Calculate bounds and item positions
   const [itemPositions, setItemPositions] = useState<number[]>([]);
 
-  const [isAuthor, setIsAuthor] = useState(initialIsAuthor);
-  const [isMobile, setIsMobile] = useState(false);
+  // Track developed status for each photo
+  const [developedPhotoIds, setDevelopedPhotoIds] = useState<string[]>([]);
+  
+  const handlePhotoDevelop = React.useCallback((photoId: string) => {
+      setDevelopedPhotoIds(prev => {
+          if (prev.includes(photoId)) return prev;
+          return [...prev, photoId];
+      });
+  }, []);
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  const handleToggleDesktopInspect = () => {
+      // Auth Check
+      if (!isAuthor && !isInspectingDesktop) { // Use isAuthor for quick check, or better, check currentUserId if you have it in context, 
+          // But wait, we need to check if they are logged in AT ALL, not just if they are the author.
+          // We can check supabase user again or use a state if we stored it.
+          // Let's use supabase directly here for safety or add a user state.
+          // Since checkAuthor runs on load, let's add a `isLoggedIn` state for clearer logic.
+      }
+      // Actually, we can just check supabase session synchronously-ish or trust the checkAuthor result if we expand it.
+      // Let's assume we want to block VISITORS.
+      // We can check if `isAuthor` is true -> they are logged in (and owner).
+      // But regular logged-in users (non-owners) should also be allowed?
+      // "Goal: When a visitor (not logged in) tries to comment..."
+      
+      // Let's check session on click to be safe and simple
+      supabase.auth.getUser().then(({ data: { user } }) => {
+          if (!user) {
+              setShowLoginModal(true);
+          } else {
+             // Proceed
+              const newState = !isInspectingDesktop;
+              setIsInspectingDesktop(newState);
+              
+              if (isAuthor) {
+                  setToastMessage(newState ? "评论已显示" : "评论已隐藏");
+              } else {
+                  // Visitor (Logged In)
+                  if (newState) {
+                      setToastMessage("点击图片任意位置评论。");
+                  } else {
+                      setToastMessage(null);
+                  }
+              }
+              
+              // Auto hide toast
+              setTimeout(() => setToastMessage(null), 3000);
+          }
+      });
+  };
+  
+  // Mobile: Toggle Comment Mode
+  const handleMobileModeChange = (mode: 'none' | 'view' | 'add') => {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+          if (!user && mode !== 'none') {
+              setShowLoginModal(true);
+          } else {
+              setMobileInteractionMode(mode);
+              
+              if (mode === 'add') {
+                  setToastMessage("点击图片空白处评论");
+              } else if (mode === 'view') {
+                  setToastMessage(isAuthor ? "评论已显示" : "查看评论模式");
+              } else {
+                  setToastMessage(null);
+              }
+              setTimeout(() => setToastMessage(null), 3000);
+          }
+      });
+  };
 
   // Detect Mobile
   useEffect(() => {
@@ -82,10 +173,13 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         
       if (ex && ex.user_id === user.id) {
           setIsAuthor(true);
+          // Owner View: Initial State showComments = true
+          if (isMobile) setMobileInteractionMode('view');
+          else setIsInspectingDesktop(true); // Desktop Owner Default
       }
     }
     checkAuthor();
-  }, [exhibitionId, initialIsAuthor]);
+  }, [exhibitionId, initialIsAuthor, isMobile]);
 
   // Calculate Layout on Resize or Data Change
   const calculateLayout = React.useCallback(() => {
@@ -111,7 +205,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     // Wait for CSS transition
     const t = setTimeout(calculateLayout, 600);
     return () => clearTimeout(t);
-  }, [isInspecting, calculateLayout]);
+  }, [interactionMode, calculateLayout]);
 
   // Fetch Guestbook Entries
   useEffect(() => {
@@ -139,7 +233,8 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-          alert("Please login to sign the guestbook.");
+          setToastMessage("请先登录");
+          setTimeout(() => setToastMessage(null), 3000);
           setSending(false);
           return;
       }
@@ -193,7 +288,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
           if (data) setGuestbookEntries(data);
       } else {
           console.error("Failed to send message", error);
-          alert("Failed to send message. Please try again.");
+          alert("发送失败，请重试。");
       }
       setSending(false);
   };
@@ -352,10 +447,31 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     setShowIndex(false);
   };
 
+  const handleScroll = () => {
+    if (!isMobile || !containerRef.current || !contentRef.current) return;
+    
+    // Auto-close comment mode on scroll (for visitors)
+    if (mobileInteractionMode !== 'none' && !isAuthor) {
+        setMobileInteractionMode('none');
+    }
+
+    const container = containerRef.current;
+    const scrollPos = container.scrollTop;
+    const containerHeight = container.clientHeight;
+    
+    // Simple Index Calculation for full-height snapping items
+    const index = Math.round(scrollPos / containerHeight);
+    
+    if (index !== activeIndex) {
+        setActiveIndex(index);
+    }
+  };
+
   return (
     <div 
       ref={containerRef} 
       className={`relative w-full h-screen bg-[#050505] ${isMobile ? 'overflow-y-scroll snap-y snap-mandatory' : 'overflow-hidden flex flex-col justify-center'}`}
+      onScroll={isMobile ? handleScroll : undefined}
     >
       {/* Atmosphere: Spotlight & Noise */}
       <div 
@@ -399,15 +515,25 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         className={isMobile ? 'w-full' : 'flex items-center gap-16'}
       >
         {/* Preface Section (Index 0) */}
-        <div className={`flex flex-col justify-center items-center text-center relative ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
+        <div className={`flex flex-col justify-center items-center text-center relative ${isMobile ? 'h-[90vh] min-h-[calc(100vh-80px)] w-full snap-start border-b border-white/5' : 'shrink-0 w-screen h-screen'}`}>
             <div className="max-w-2xl text-center px-6">
                 <h1 className="font-serif text-6xl md:text-8xl text-white mb-8 tracking-tighter uppercase">{title || "THE UNSEEN"}</h1>
                 <p className="font-sans text-gray-400 text-lg leading-relaxed max-w-lg mx-auto">
                     {description || "A journey through the spaces between moments. This exhibition explores the silence that lingers after the shutter clicks, revealing the unseen textures of memory and light."}
                 </p>
                 {isMobile && (
-                    <div className="mt-12 animate-bounce opacity-50">
-                        <p className="text-[10px] tracking-[0.3em] uppercase text-white">Scroll to Develop</p>
+                    <div 
+                        onClick={() => {
+                            if (contentRef.current && contentRef.current.children.length > 1) {
+                                contentRef.current.children[1].scrollIntoView({ behavior: 'smooth' });
+                            }
+                        }}
+                        className="absolute bottom-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 animate-pulse cursor-pointer pointer-events-auto active:scale-95 transition-transform"
+                    >
+                         <span className="text-[10px] tracking-[0.6em] uppercase text-white/70 font-serif font-light">
+                            向下探索
+                         </span>
+                         <ChevronsDown className="text-white/80 animate-bounce" size={28} strokeWidth={1.5} />
                     </div>
                 )}
             </div>
@@ -415,7 +541,15 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
 
         {/* Photos (Index 1+) */}
         {photos.map((photo, index) => (
-          <div key={photo.id} className={isMobile ? 'min-h-screen w-full snap-start flex flex-col justify-center bg-black py-20' : 'shrink-0 relative'}>
+          <div 
+            key={photo.id} 
+            className={isMobile ? 'h-[90vh] min-h-[calc(100vh-80px)] w-full snap-start flex flex-col justify-center bg-black py-20 border-b border-white/5' : 'shrink-0 relative'}
+            onClick={() => {
+                if (isMobile && !isAuthor && mobileInteractionMode !== 'none') {
+                    setMobileInteractionMode('none');
+                }
+            }}
+          >
             <PhotoFrame 
               id={photo.id}
               src={photo.src}
@@ -425,10 +559,30 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               year={photo.year}
               aspectRatio={photo.aspectRatio}
               annotations={photo.annotations}
-              isInspecting={isInspecting}
+              interactionMode={interactionMode}
               skipDeveloping={isAuthor}
               exif={photo.exif}
               isMobile={isMobile}
+              isOwner={isAuthor}
+              onDevelop={handlePhotoDevelop}
+              onExpand={() => setFullScreenPhoto(photo)}
+              priority={index < 4}
+              isActive={activeIndex === index + 1}
+              onNext={() => {
+                  if (isMobile && !isAuthor) {
+                      setMobileInteractionMode('none');
+                  }
+                  if (index === photos.length - 1) {
+                      // Last Photo -> Back to Top
+                      containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                  } else {
+                      // Next Photo
+                      const nextElement = contentRef.current?.children[index + 2]; // +1 for Preface, +1 for Next
+                      nextElement?.scrollIntoView({ behavior: 'smooth' });
+                  }
+              }}
+              onModeChange={handleMobileModeChange}
+              isLast={index === photos.length - 1}
             />
           </div>
         ))}
@@ -436,7 +590,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         {/* Guestbook Slide (Final) */}
         <div className={`flex flex-col justify-center items-center relative p-8 ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
             <div className="max-w-2xl w-full">
-                <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">Notes</h2>
+                <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">评论</h2>
                 
                 {/* Message Input */}
                 <form onSubmit={handleSendMessage} className="mb-12 relative">
@@ -444,7 +598,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                         type="text" 
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Annotate this negative..."
+                        placeholder="写下此刻的感受..."
                         className="w-full bg-transparent border-b border-white/20 py-4 px-2 text-xl font-serif text-white placeholder-white/30 focus:outline-none focus:border-white transition-colors pr-12"
                     />
                     <button 
@@ -484,7 +638,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                     ))}
                     {guestbookEntries.length === 0 && (
                         <div className="col-span-full text-center text-white/20 font-serif italic">
-                            Be the first to leave a note...
+                            暂无评论...
                         </div>
                     )}
                 </div>
@@ -493,40 +647,58 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       </motion.div>
       
       {/* Mobile Logo - Hidden as requested */}
-      {/* Mobile Logo */}
-      {isMobile && (
-        <>
-            {/* Logo - Hidden as requested previously */}
-            {/* <div className="fixed top-4 left-4 z-50 opacity-30 pointer-events-none">
-            <h1 className="font-serif text-sm font-bold tracking-[0.2em] uppercase text-white">LATENT</h1>
-            </div> */}
-
-            {/* Mobile Comment Mode Toggle */}
-            <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2">
-                {isInspecting && (
-                    <div className="bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 mb-2 mr-1">
-                        <p className="text-[10px] font-sans tracking-widest uppercase text-white whitespace-nowrap">
-                            Tap photo to comment
-                        </p>
-                    </div>
-                )}
-                <button 
-                    onClick={() => setIsInspectingMobile(!isInspectingMobile)}
-                    className={`p-3 rounded-full backdrop-blur-md border transition-all shadow-lg active:scale-95 ${
-                        isInspectingMobile 
-                        ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]' 
-                        : 'bg-black/40 text-white/80 border-white/10'
-                    }`}
-                >
-                    <MessageSquare size={20} fill={isInspectingMobile ? "currentColor" : "none"} />
-                </button>
-            </div>
-        </>
-      )}
-
+      
       {/* Desktop Controls */}
       {!isMobile && (
         <>
+            {/* Desktop Toast */}
+            <AnimatePresence>
+                {toastMessage && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 bg-black/80 backdrop-blur-md px-6 py-3 rounded-full border border-white/10"
+                    >
+                        <p className="text-white text-xs font-serif tracking-[0.2em] uppercase">
+                            {toastMessage}
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Desktop Comment Toggle - Only show when viewing photos */}
+            {(() => {
+                 const isViewingPhoto = activeIndex > 0 && activeIndex <= photos.length;
+                 const currentPhoto = photos[activeIndex - 1];
+                 const isDeveloped = currentPhoto && developedPhotoIds.includes(currentPhoto.id);
+
+                 if (isViewingPhoto && (isAuthor || isDeveloped)) {
+                     return (
+                        <div className="fixed bottom-8 right-24 z-40 group flex flex-col items-center">
+                             <button 
+                                 onClick={handleToggleDesktopInspect}
+                                 className={`p-4 rounded-full backdrop-blur-md border transition-all hover:scale-110 active:scale-95 shadow-lg relative z-10 ${
+                                     isInspectingDesktop
+                                     ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.5)]'
+                                     : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
+                                 }`}
+                             >
+                                 <MessageSquare size={24} fill={isInspectingDesktop ? "currentColor" : "none"} strokeWidth={1.5} />
+                             </button>
+                             
+                             {/* Desktop Tooltip (Bottom) */}
+                             <div className="absolute top-full mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 whitespace-nowrap z-20">
+                                 <p className="text-[10px] font-sans tracking-widest uppercase text-white">
+                                     {isInspectingDesktop ? "收起所有评论" : "点击查看评论"}
+                                 </p>
+                             </div>
+                        </div>
+                     );
+                 }
+                 return null;
+            })()}
+
             {/* Index Button */}
             <button 
                 onClick={() => setShowIndex(true)}
@@ -568,7 +740,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                                 className="object-cover transition-transform duration-500 group-hover:scale-110 opacity-70 group-hover:opacity-100"
                             />
                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                <span className="bg-black/50 text-white px-3 py-1 text-xs font-serif uppercase tracking-widest backdrop-blur-sm">View</span>
+                                <span className="bg-black/50 text-white px-3 py-1 text-xs font-serif uppercase tracking-widest backdrop-blur-sm">查看</span>
                             </div>
                             </div>
                         ))}
@@ -592,6 +764,53 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
             </div>
         </>
       )}
+      {/* Login Modal */}
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)} 
+      />
+
+      {/* Mobile Scroll Affordance */}
+      {isMobile && <VerticalProgressBar containerRef={containerRef} />}
+
+      {/* Full Screen Lightbox */}
+      <AnimatePresence>
+        {fullScreenPhoto && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 md:p-8"
+                onClick={() => setFullScreenPhoto(null)}
+            >
+                <button 
+                    className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors z-[101]"
+                    onClick={() => setFullScreenPhoto(null)}
+                >
+                    <X size={32} strokeWidth={1} />
+                </button>
+                
+                <div 
+                    className="relative w-full h-full flex items-center justify-center pointer-events-none"
+                >
+                    <img 
+                        src={fullScreenPhoto.src} 
+                        alt={fullScreenPhoto.alt}
+                        className="max-w-full max-h-full object-contain shadow-2xl pointer-events-auto select-none"
+                        draggable={false}
+                        onClick={(e) => e.stopPropagation()} 
+                    />
+                     {fullScreenPhoto.title && (
+                         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-6 py-2 rounded-full border border-white/10 pointer-events-auto">
+                             <p className="text-white text-sm font-serif tracking-widest uppercase">
+                                 {fullScreenPhoto.title}
+                             </p>
+                         </div>
+                     )}
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -16,6 +16,7 @@ export interface Photo {
   year?: string;
   aspectRatio: 'landscape' | 'portrait' | 'square';
   color: string; // Dominant color for the spotlight
+  blurhash?: string; // Generated BlurHash
   annotations: Annotation[];
   exif?: {
     ISO?: number;

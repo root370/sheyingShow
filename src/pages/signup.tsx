@@ -17,9 +17,9 @@ export default function SignUp() {
   })
 
   const presets = [
-    "Recording (记录)",
-    "Self-expression (表达自我)",
-    "My Perspective (我的视角)"
+    "记录",
+    "表达自我",
+    "我的视角"
   ]
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -45,7 +45,7 @@ export default function SignUp() {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Signup failed')
+        throw new Error(data.error || '注册失败')
       }
 
       // 2. Profile creation is handled by Database Trigger (already done)
@@ -82,25 +82,25 @@ export default function SignUp() {
       >
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-serif tracking-widest text-white">THE PHOTOGRAPHER'S SOUL</h1>
-          <p className="text-sm text-neutral-500 tracking-wide uppercase">Begin your journey</p>
+          <p className="text-sm text-neutral-500 tracking-wide uppercase">开始你的旅程</p>
         </div>
 
         <form onSubmit={handleSignUp} className="space-y-6">
           <div className="space-y-4">
             <div>
-              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">Username</label>
+              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">称呼</label>
               <input
                 type="text"
                 required
                 className="w-full bg-neutral-900 border border-neutral-800 focus:border-neutral-600 rounded-none px-4 py-3 text-sm transition-colors outline-none"
-                placeholder="Your artistic alias"
+                placeholder="你的艺术化名"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               />
             </div>
             
             <div>
-              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">Email</label>
+              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">邮箱</label>
               <input
                 type="email"
                 required
@@ -112,7 +112,7 @@ export default function SignUp() {
             </div>
 
             <div>
-              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">Password</label>
+              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">口令</label>
               <input
                 type="password"
                 required
@@ -125,7 +125,7 @@ export default function SignUp() {
 
             <div className="pt-4 border-t border-neutral-900">
               <label className="block text-sm font-serif text-white mb-4 text-center">
-                What is the essence of photography to you?
+                摄影对你来说意味着什么？
               </label>
               
               <div className="flex flex-wrap gap-2 mb-4 justify-center">
@@ -149,7 +149,7 @@ export default function SignUp() {
                 required
                 rows={3}
                 className="w-full bg-neutral-900 border border-neutral-800 focus:border-neutral-600 rounded-none px-4 py-3 text-sm transition-colors outline-none resize-none"
-                placeholder="Or express your own thought..."
+                placeholder="或者写下你自己的想法..."
                 value={formData.essence}
                 onChange={(e) => setFormData({ ...formData, essence: e.target.value })}
               />
@@ -165,30 +165,16 @@ export default function SignUp() {
             disabled={loading}
             className="w-full bg-white text-black font-bold py-3 text-sm uppercase tracking-widest hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Creating Account...' : 'Join the Gallery'}
+            {loading ? '正在显影...' : '加入 Latent'}
           </button>
 
           <div className="text-center">
             <Link href="/login" className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors">
-              Already have an account? Enter here
+              已有身份？点击进入
             </Link>
           </div>
         </form>
       </motion.div>
-      {/* Footer */}
-      <footer className="absolute bottom-4 left-0 w-full text-center z-40 flex flex-col items-center gap-1">
-        <p className="text-[10px] font-sans text-white/20 tracking-[0.2em] uppercase">
-          LATENT © 2026. Slow Photography Protocol.
-        </p>
-        <a 
-          href="https://beian.miit.gov.cn/" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="text-[10px] font-sans text-white/10 hover:text-white/30 tracking-[0.1em] transition-colors"
-        >
-          沪ICP备2026003431号-1
-        </a>
-      </footer>
     </div>
   )
 }

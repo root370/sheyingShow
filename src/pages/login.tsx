@@ -51,6 +51,9 @@ export default function Login() {
 
       if (error) throw error
 
+      // Save email for next time
+      localStorage.setItem('remembered_email', formData.email)
+
       // 4. Redirect after a short delay to let the "flash" settle and give a cinematic feel
       setTimeout(() => {
         router.push('/')
@@ -94,10 +97,10 @@ export default function Login() {
       >
         <div className="text-center space-y-6 mb-12">
           <p className="font-serif text-lg md:text-xl text-white/80 leading-relaxed tracking-wide">
-            Images are not just pixels. <br/> They are memories waiting to be developed.
+            影像不止是像素。<br/> 它们是等待显影的记忆。
           </p>
           <p className="font-serif text-sm text-white/50 tracking-[0.2em] uppercase">
-            Welcome to L A T E N T.
+            欢迎来到 L A T E N T.
           </p>
         </div>
 
@@ -105,10 +108,13 @@ export default function Login() {
           <div className="space-y-4">
             <div>
               <input
+                id="email"
+                name="email"
+                autoComplete="username"
                 type="email"
                 required
                 className="w-full bg-transparent border-b border-white/20 focus:border-white rounded-none px-2 py-3 text-center transition-colors outline-none placeholder:text-neutral-700 font-serif tracking-widest text-white"
-                placeholder="EMAIL"
+                placeholder="邮箱"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               />
@@ -116,10 +122,13 @@ export default function Login() {
 
             <div>
               <input
+                id="password"
+                name="password"
+                autoComplete="current-password"
                 type="password"
                 required
                 className="w-full bg-transparent border-b border-white/20 focus:border-white rounded-none px-2 py-3 text-center transition-colors outline-none placeholder:text-neutral-700 font-serif tracking-widest text-white"
-                placeholder="PASSWORD"
+                placeholder="口令"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               />
@@ -134,37 +143,22 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full group relative overflow-hidden px-6 py-4 border border-neutral-800 hover:border-white transition-colors duration-500"
+              className="w-full group relative overflow-hidden px-6 py-4 bg-white text-black hover:bg-neutral-200 transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:scale-[1.02]"
             >
-              <span className="relative z-10 font-serif tracking-[0.2em] text-sm group-hover:text-black transition-colors duration-500">
-                {loading ? 'AUTHENTICATING...' : 'ENTER'}
+              <span className="relative z-10 font-serif tracking-[0.2em] text-sm font-bold">
+                {loading ? '正在验证...' : '进入暗房'}
               </span>
-              <div className="absolute inset-0 bg-white transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
             </button>
 
             <Link 
               href="/signup" 
               className="block w-full text-center py-4 border border-white/20 hover:border-white hover:bg-white hover:text-black text-neutral-400 transition-all duration-500"
             >
-               <span className="font-serif text-xs tracking-[0.2em] uppercase">Sign Up</span>
+               <span className="font-serif text-xs tracking-[0.2em] uppercase">领取身份</span>
             </Link>
           </div>
         </form>
       </motion.div>
-      {/* Footer */}
-      <footer className="absolute bottom-4 left-0 w-full text-center z-40 flex flex-col items-center gap-1">
-        <p className="text-[10px] font-sans text-white/20 tracking-[0.2em] uppercase">
-          LATENT © 2026. Slow Photography Protocol.
-        </p>
-        <a 
-          href="https://beian.miit.gov.cn/" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="text-[10px] font-sans text-white/10 hover:text-white/30 tracking-[0.1em] transition-colors"
-        >
-          沪ICP备2026003431号-1
-        </a>
-      </footer>
     </div>
   )
 }

@@ -63,7 +63,7 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
       </div>
 
       {/* 3. Text Overlay */}
-      <div className="relative z-10 w-full max-w-[1920px] px-8 md:px-24 flex flex-col justify-center h-auto md:h-full pointer-events-none mb-20 md:mb-0">
+      <div className="relative z-10 w-full max-w-[1920px] px-8 md:px-24 flex flex-col justify-center h-auto md:h-full pointer-events-none  md:mb-0">
           
           <motion.div 
             className="mix-blend-difference space-y-2 relative"
@@ -93,13 +93,11 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, delay: 0.4 }}
-                    className="font-sans text-5xl font-black tracking-tighter leading-[0.9] max-w-5xl relative"
+                    className="font-sans text-5xl font-black tracking-tighter leading-[1.1] max-w-5xl relative"
                 >
-                    <span className="block text-[#7f7f7f]">WE DON'T</span>
-                    <span className="block text-[#7f7f7f]">JUST</span>
-                    <span className="block text-accent">CAPTURE</span>
-                    <span className="block text-white">WE</span>
-                    <span className="block text-white">REIMAGINE</span>
+                    <span className="block text-[#7f7f7f]">不止于捕捉</span>
+                    <span className="block text-accent">重塑</span>
+                    <span className="block text-white">影像 想象</span>
                 </motion.h1>
                 
                 {/* Bottom Gray Blob */}
@@ -122,11 +120,11 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8, delay: 0.4 }}
-                    className="font-sans text-7xl lg:text-9xl font-black tracking-tighter text-white leading-[0.85] max-w-5xl"
+                    className="font-sans text-7xl lg:text-9xl font-black tracking-tighter text-white leading-[1.1] max-w-5xl"
                 >
-                    <span className="block text-neutral-600">WE DON'T JUST</span>
-                    <span className="block text-accent">CAPTURE</span>
-                    <span className="block">WE REIMAGINE</span>
+                    <span className="block text-neutral-600">不止于捕捉</span>
+                    <span className="block text-accent">重塑</span>
+                    <span className="block">影像想象</span>
                 </motion.h1>
             </div>
 
@@ -148,10 +146,10 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
                     <div className="mt-12 pointer-events-auto hidden md:block">
                         <Link 
                             href="/editor"
-                            className="group inline-flex items-center gap-3 px-6 py-3 border border-white/20 bg-white/5 hover:bg-white hover:text-black backdrop-blur-sm transition-all duration-300 rounded-sm"
+                            className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-black hover:bg-neutral-200 transition-all duration-300 rounded-sm shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:scale-105"
                         >
-                            <Plus size={16} className="text-accent group-hover:text-black transition-colors" />
-                            <span className="font-sans text-xs font-bold tracking-[0.2em] uppercase">Enter Darkroom</span>
+                            <Plus size={18} className="text-black transition-colors" />
+                            <span className="font-sans text-sm font-bold tracking-[0.2em] uppercase">进入暗房</span>
                         </Link>
                     </div>
                 </motion.div>
@@ -169,14 +167,14 @@ export default function HeroSection({ title, subtitle, userProfile }: HeroSectio
           </div>
           <div className="h-24 w-[1px] bg-white/20 mx-auto" />
           <div className="writing-vertical-rl rotate-180 text-[10px] font-sans tracking-[0.3em] opacity-50 uppercase">
-              Connect
+              连接
           </div>
       </div>
 
       {/* Right: Scroll Indicator */}
       <div className="absolute right-8 bottom-12 hidden md:flex flex-col gap-8 z-20 mix-blend-difference text-white items-center">
            <div className="writing-vertical-rl text-[10px] font-sans tracking-[0.3em] opacity-50 uppercase">
-              Scroll to Explore
+              滑动探索
           </div>
           <div className="h-24 w-[1px] bg-white/20" />
           <motion.div

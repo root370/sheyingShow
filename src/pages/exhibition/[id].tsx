@@ -83,7 +83,7 @@ export default function ExhibitionPage({ id, exhibition, photos, isAuthor, error
         className="fixed top-8 left-8 z-50 flex items-center gap-2 text-white/50 hover:text-white transition-colors group"
       >
         <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-        <span className="font-sans text-xs tracking-widest uppercase">Lobby</span>
+        <span className="font-sans text-xs tracking-widest uppercase">大厅</span>
       </Link>
 
       <GalleryContainer 

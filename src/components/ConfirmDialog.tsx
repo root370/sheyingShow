@@ -19,8 +19,8 @@ export default function ConfirmDialog({
   isOpen,
   title,
   description,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
+  confirmText = "确认",
+  cancelText = "取消",
   isDestructive = false,
   onConfirm,
   onCancel

@@ -10,6 +10,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useExhibitionCache } from '@/context/ExhibitionContext';
+import TargetedApologyModal from '@/components/TargetedApologyModal';
+import ResonanceLetter from '@/components/ResonanceLetter';
 
 interface LobbyProps {
   mode: 'dashboard' | 'explore';
@@ -37,9 +39,32 @@ export default function Lobby({ mode }: LobbyProps) {
   const [newPassword, setNewPassword] = useState('');
   const [updateMessage, setUpdateMessage] = useState('');
 
+  // Resonance Letter State
+  const [showLetter, setShowLetter] = useState(false);
+  const [letterComments, setLetterComments] = useState<any[]>([]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
+  };
+
+  const handleCloseLetter = async () => {
+      setShowLetter(false);
+      
+      // Mark as read
+      const ids = letterComments.map(c => c.id);
+      if (ids.length === 0) return;
+
+      try {
+          const { error } = await supabase
+            .from('guestbook_entries')
+            .update({ is_read: true })
+            .in('id', ids);
+          
+          if (error) console.error("Failed to mark comments as read", error);
+      } catch (err) {
+          console.error("Error updating read status", err);
+      }
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -77,7 +102,7 @@ export default function Lobby({ mode }: LobbyProps) {
         setNewPassword('');
       }, 1500);
     } catch (error: any) {
-      setUpdateMessage(`Error: ${error.message}`);
+      setUpdateMessage(`错误：${error.message}`);
     }
   };
 
@@ -145,17 +170,28 @@ export default function Lobby({ mode }: LobbyProps) {
       let currentUserId = null;
       if (mode === 'dashboard') {
           try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                  currentUserId = user.id;
+              // OPTIMIZATION: Use getSession first for speed (avoids network trip if valid)
+              const { data: { session } } = await supabase.auth.getSession();
+              
+              if (session?.user) {
+                  currentUserId = session.user.id;
                   setUserProfile({
-                      username: user.user_metadata?.username || 'Artist',
-                      essence: user.user_metadata?.essence_of_photography || '"Photography is the story I fail to put into words."'
+                      username: session.user.user_metadata?.username || 'Artist',
+                      essence: session.user.user_metadata?.essence_of_photography || '"Photography is the story I fail to put into words."'
                   });
               } else {
-                  // If dashboard and no user, redirect
-                  router.replace('/login');
-                  return;
+                  // Fallback to getUser only if session is missing
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (user) {
+                      currentUserId = user.id;
+                      setUserProfile({
+                          username: user.user_metadata?.username || 'Artist',
+                          essence: user.user_metadata?.essence_of_photography || '"Photography is the story I fail to put into words."'
+                      });
+                  } else {
+                      router.replace('/login');
+                      return;
+                  }
               }
           } catch (e) {
               console.error("Error fetching user", e);
@@ -174,22 +210,38 @@ export default function Lobby({ mode }: LobbyProps) {
 
         if (mode === 'dashboard') {
             if (currentUserId) {
-                const result = await supabase
-                    .from('exhibitions')
-                    .select('*')
-                    .eq('user_id', currentUserId)
-                    .order('created_at', { ascending: false });
-                data = result.data || [];
-                error = result.error;
+                // Parallel fetching for dashboard
+                const [exhibitionsResult, collectedResult, commentsResult] = await Promise.all([
+                    supabase
+                        .from('exhibitions')
+                        .select('id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username)')
+                        .eq('user_id', currentUserId)
+                        .order('created_at', { ascending: false }),
+                    supabase
+                        .from('collections')
+                        .select('exhibitions(id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username))')
+                        .eq('user_id', currentUserId)
+                        .order('created_at', { ascending: false }),
+                    supabase
+                        .from('guestbook_entries')
+                        .select('*, exhibitions!inner(user_id, title), profiles(username)')
+                        .eq('exhibitions.user_id', currentUserId)
+                        .eq('is_read', false)
+                        .neq('user_id', currentUserId)
+                        .order('created_at', { ascending: false })
+                ]);
 
-                const collectedResult = await supabase
-                    .from('collections')
-                    .select('exhibitions(*, profiles(username))')
-                    .eq('user_id', currentUserId)
-                    .order('created_at', { ascending: false });
-                
+                data = exhibitionsResult.data || [];
+                error = exhibitionsResult.error;
+
                 if (collectedResult.data) {
                     collectedData = collectedResult.data.map((c: any) => c.exhibitions).filter(Boolean);
+                }
+
+                if (commentsResult.data && commentsResult.data.length > 0) {
+                    setLetterComments(commentsResult.data);
+                    // Slight delay to show letter after loading
+                    setTimeout(() => setShowLetter(true), 1000);
                 }
             }
         } else {
@@ -263,7 +315,7 @@ export default function Lobby({ mode }: LobbyProps) {
   const isExplore = mode === 'explore';
 
   return (
-    <main className="min-h-[100dvh] w-full bg-background text-white selection:bg-accent selection:text-black overflow-x-hidden">
+    <main className="min-h-[100dvh] w-full bg-background text-white selection:bg-accent selection:text-black overflow-x-hidden flex flex-col">
       
       {/* Grain Overlay Removed (Moved to Global CSS) */}
       
@@ -283,8 +335,8 @@ export default function Lobby({ mode }: LobbyProps) {
              </div>
              
              <span className="text-[8px] tracking-[0.3em] font-sans font-medium opacity-70 uppercase mt-2 md:mt-1 text-center md:text-left">
-                DEVELOP THE UNSEEN
-             </span>
+                显影未见之物
+            </span>
         </div>
 
         <div className="flex items-center gap-8 pointer-events-auto pt-2 md:pt-0 absolute top-8 right-6 md:static">
@@ -292,7 +344,7 @@ export default function Lobby({ mode }: LobbyProps) {
                 <Link 
                     href="/editor" 
                     className="md:hidden flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity duration-300"
-                    aria-label="Import Negative"
+                    aria-label="导入底片"
                 >
                     <Plus size={20} strokeWidth={1} />
                     <span className="text-[10px] font-sans tracking-widest uppercase text-white">上传</span>
@@ -303,14 +355,14 @@ export default function Lobby({ mode }: LobbyProps) {
                     <button 
                         onClick={() => setShowSettings(true)}
                         className="opacity-60 hover:opacity-100 transition-opacity duration-300"
-                        aria-label="Settings"
+                        aria-label="设置"
                     >
                         <Settings size={20} strokeWidth={1} />
                     </button>
                     <button 
                         onClick={handleLogout}
                         className="opacity-60 hover:opacity-100 transition-opacity duration-300"
-                        aria-label="Sign out"
+                        aria-label="登出"
                     >
                         <LogOut size={20} strokeWidth={1} />
                     </button>
@@ -319,9 +371,9 @@ export default function Lobby({ mode }: LobbyProps) {
                 <Link 
                     href="/login" 
                     className="flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 font-sans text-xs tracking-[0.2em] uppercase"
-                    aria-label="Sign in"
+                    aria-label="登录"
                 >
-                    Sign In <ArrowRight size={14} />
+                    进入暗房 <ArrowRight size={14} />
                 </Link>
             )}
         </div>
@@ -344,12 +396,12 @@ export default function Lobby({ mode }: LobbyProps) {
               className="bg-[#111] border border-white/10 p-8 w-full max-w-md rounded-sm relative"
               onClick={e => e.stopPropagation()}
             >
-              <h2 className="font-serif text-2xl text-white mb-6 uppercase tracking-wider">Settings</h2>
+              <h2 className="font-serif text-2xl text-white mb-6 uppercase tracking-wider">设置</h2>
               
               <form onSubmit={handleUpdateProfile} className="space-y-6">
                 <div>
                   <label className="block text-[10px] font-sans text-gray-400 uppercase tracking-widest mb-2">
-                    New Username
+                    新昵称
                   </label>
                   <input
                     type="text"
@@ -362,13 +414,13 @@ export default function Lobby({ mode }: LobbyProps) {
 
                 <div>
                   <label className="block text-[10px] font-sans text-gray-400 uppercase tracking-widest mb-2">
-                    New Password
+                    新口令
                   </label>
                   <input
                     type="password"
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    placeholder="Leave blank to keep current"
+                    placeholder="留空保持不变"
                     className="w-full bg-white/5 border border-white/10 p-3 text-white text-sm focus:outline-none focus:border-white/30 transition-colors"
                   />
                 </div>
@@ -385,13 +437,13 @@ export default function Lobby({ mode }: LobbyProps) {
                     onClick={() => setShowSettings(false)}
                     className="text-xs font-sans text-gray-400 hover:text-white uppercase tracking-widest transition-colors"
                   >
-                    Cancel
+                    取消
                   </button>
                   <button
                     type="submit"
                     className="bg-white text-black px-6 py-2 text-xs font-bold uppercase tracking-widest hover:bg-gray-200 transition-colors"
                   >
-                    Save Changes
+                    保存更改
                   </button>
                 </div>
               </form>
@@ -400,9 +452,23 @@ export default function Lobby({ mode }: LobbyProps) {
         )}
       </AnimatePresence>
       <NavigationSwitch currentMode={mode} />
+      
+      {/* Targeted Apology Modal */}
+      {userProfile && <TargetedApologyModal currentUser={userProfile} />}
+
+      {/* Resonance Letter */}
+      <AnimatePresence>
+        {showLetter && userProfile && (
+            <ResonanceLetter 
+                username={userProfile.username} 
+                comments={letterComments} 
+                onClose={handleCloseLetter} 
+            />
+        )}
+      </AnimatePresence>
 
       {/* Content */}
-      <div className="relative z-10 w-full mx-auto">
+      <div className="relative z-10 w-full mx-auto flex-1">
         
         <AnimatePresence mode="wait">
             {loading ? (
@@ -424,8 +490,8 @@ export default function Lobby({ mode }: LobbyProps) {
                 >
                     {/* Hero Section */}
                     <HeroSection 
-                        title={isExplore ? "EXPLORE THE UNSEEN" : userProfile?.username || "ARTIST STUDIO"}
-                        subtitle={isExplore ? "CURATED COLLECTION" : "WELCOME BACK"}
+                        title={isExplore ? "探索未见之物" : userProfile?.username || "艺术家工作室"}
+                        subtitle={isExplore ? "精选辑录" : "欢迎归来"}
                         userProfile={userProfile || undefined}
                     />
 
@@ -436,22 +502,22 @@ export default function Lobby({ mode }: LobbyProps) {
                         <div className="space-y-0 md:space-y-20 mt-0 md:mt-20">
                              {!isExplore && (
                                 <div className="hidden md:flex items-center justify-between">
-                                    <h3 className="font-serif text-4xl text-white italic">Selected Works</h3>
+                                    <h3 className="font-serif text-4xl text-white italic">精选作品</h3>
                                     <div className="h-[1px] flex-1 bg-white/5 mx-12" />
                                 </div>
                              )}
                             
                             {exhibitions.length === 0 ? (
                                  <div className="h-[40vh] flex flex-col items-center justify-center border border-dashed border-white/5 rounded-sm bg-white/[0.02]">
-                                    <p className="text-neutral-600 font-sans text-xs tracking-[0.3em] mb-8 uppercase">No latent images found. Start capturing.</p>
+                                    <p className="text-neutral-600 font-sans text-xs tracking-[0.3em] mb-8 uppercase">暂无潜影。开始创作。</p>
                                     {!isExplore && (
                                         <Link href="/editor" className="text-accent hover:text-white transition-colors flex items-center gap-3 text-xs uppercase tracking-[0.2em]">
-                                            <Plus size={14} /> Import Negative
+                                            <Plus size={14} /> 上传底片
                                         </Link>
                                     )}
                                  </div>
                             ) : (
-                                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-[15px] md:gap-x-8 md:gap-y-16">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-[15px] md:gap-x-8 md:gap-y-16">
                                     {exhibitions.map((exhibition, index) => (
                                         <ExhibitionPoster 
                                             key={exhibition.id}  
@@ -471,9 +537,9 @@ export default function Lobby({ mode }: LobbyProps) {
         </AnimatePresence>
       </div>
       {/* Footer */}
-      <footer className="fixed bottom-4 left-0 w-full text-center pointer-events-none z-40 flex flex-col items-center gap-1">
+      <footer className="w-full text-center py-8 z-40 flex flex-col items-center gap-1 relative">
         <p className="text-[10px] font-sans text-white/20 tracking-[0.2em] uppercase">
-          LATENT © 2026. Slow Photography Protocol.
+          LATENT © 2026. Slow Photography Protocol. (v2.0)
         </p>
         <a 
           href="https://beian.miit.gov.cn/" 

@@ -14,36 +14,22 @@ interface ExhibitionPosterProps {
   index: number;
   showAuthor?: boolean;
   onDelete?: (id: string) => void;
+  initialCollected?: boolean;
 }
 
-const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, showAuthor, onDelete }) => {
+const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, showAuthor, onDelete, initialCollected = false }) => {
   const router = useRouter();
   const ex = exhibition as any;
-  const [isCollected, setIsCollected] = useState(false);
+  const [isCollected, setIsCollected] = useState(initialCollected);
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
   const isOwner = ex.type === 'own';
-
-  // Generate a consistent random color based on ID for the card background
-  // Or use a nice gradient. Let's use a subtle dark gradient that fits the theme.
-  // Actually, to match the reference image's colorful cards, let's try to infer or pick a color.
-  // Since we don't have color data, we'll use a sophisticated dark grey/blue palette.
-  // If we want to be bold like the reference (Yellow/Blue), we'd need that data.
-  // For "High-end photography", maybe a deep, rich card background is better.
-  const cardColors = [
-    'bg-[#1c1c1c]', // Dark Grey
-    'bg-[#1a1f2c]', // Dark Blue
-    'bg-[#1f1a1a]', // Dark Red-ish
-    'bg-[#1a1f1a]', // Dark Green-ish
-  ];
-  // Simple hash for consistent color
-  const colorIndex = exhibition.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % cardColors.length;
-  const cardBgClass = cardColors[colorIndex];
-
+  // ...
   useEffect(() => {
     async function checkStatus() {
-      if (!showAuthor) return;
+      // If we already know it's collected (passed via prop), skip the check
+      if (!showAuthor || initialCollected) return; 
       
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -122,8 +108,6 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
         // Wait a bit before removing from list so user sees the toast
         setTimeout(() => {
              if (onDelete) onDelete(exhibition.id);
-             // Force hard reload to ensure data consistency
-             window.location.reload();
         }, 1500);
 
     } catch (err) {
@@ -199,7 +183,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
                 {showAuthor && (
                     <button
                         onClick={toggleCollect}
-                        aria-label={isCollected ? "Remove from collection" : "Add to collection"}
+                        aria-label={isCollected ? "取消收藏" : "加入收藏"}
                         className={`absolute top-2 right-2 md:top-6 md:right-6 z-20 p-3 rounded-full backdrop-blur-md transition-all duration-300 ${
                             isCollected 
                             ? 'bg-accent text-black shadow-[0_0_15px_rgba(229,208,172,0.5)]' 
@@ -252,14 +236,14 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
                             className="flex items-center gap-2 text-[10px] text-white/40 hover:text-white uppercase tracking-widest transition-colors"
                         >
                             <Edit size={12} />
-                            <span>Edit</span>
+                            <span>编辑</span>
                         </button>
                         <button
                             onClick={handleDeleteClick}
                             className="flex items-center gap-2 text-[10px] text-white/40 hover:text-red-400 uppercase tracking-widest transition-colors"
                         >
                             <Trash2 size={12} />
-                            <span>Delete</span>
+                            <span>移除</span>
                         </button>
                     </div>
                 )}
@@ -268,10 +252,10 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
         
         <ConfirmDialog
             isOpen={showDeleteConfirm}
-            title="Delete Exhibition"
-            description="Are you sure you want to delete this exhibition? This action cannot be undone."
-            confirmText="Delete"
-            cancelText="Cancel"
+            title="移除展览"
+            description="确定要移除这个展览吗？此操作无法撤销。"
+            confirmText="移除"
+            cancelText="取消"
             isDestructive={true}
             onConfirm={handleDeleteConfirm}
             onCancel={() => setShowDeleteConfirm(false)}
@@ -287,7 +271,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
                     className="fixed bottom-8 left-1/2 z-[100] bg-white text-black px-6 py-3 rounded-full text-xs font-sans tracking-widest uppercase shadow-[0_0_20px_rgba(255,255,255,0.3)] flex items-center gap-3"
                 >
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    Exhibition Deleted
+                    展览已移除
                 </motion.div>
             )}
         </AnimatePresence>

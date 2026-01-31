@@ -47,11 +47,14 @@ export default function ExhibitionControls({ exhibitionId, authorId }: Exhibitio
 
             if (error) throw error;
             
-            router.push('/'); // Return to lobby
-            // router.refresh(); // Not available in Pages Router
+            // 3. Navigate back to lobby and refresh
+            router.push('/'); 
+            // In Pages Router, we don't have router.refresh(). 
+            // Navigating to '/' is usually enough, or we can force reload if needed.
+            // router.reload(); 
         } catch (err) {
             console.error('Error deleting exhibition:', err);
-            alert('Failed to delete exhibition. Please try again.');
+            alert('删除展览失败，请重试。');
         } finally {
             setShowDeleteConfirm(false);
         }
@@ -68,22 +71,22 @@ export default function ExhibitionControls({ exhibitionId, authorId }: Exhibitio
                 className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md rounded-full text-white/70 hover:text-white hover:bg-white/20 transition-all text-xs font-sans tracking-widest uppercase"
             >
                 <Edit size={14} />
-                <span>Edit</span>
+                <span>编辑</span>
             </button>
             <button
                 onClick={handleDeleteClick}
                 className="flex items-center gap-2 px-4 py-2 bg-red-500/10 backdrop-blur-md rounded-full text-red-400 hover:text-white hover:bg-red-600 transition-all text-xs font-sans tracking-widest uppercase"
             >
                 <Trash2 size={14} />
-                <span>Delete</span>
+                <span>移除</span>
             </button>
             
             <ConfirmDialog
                 isOpen={showDeleteConfirm}
-                title="Delete Exhibition"
-                description="Are you sure you want to delete this exhibition? This action cannot be undone."
-                confirmText="Delete"
-                cancelText="Cancel"
+                title="移除展览"
+                description="确定要移除这个展览吗？此操作无法撤销。"
+                confirmText="移除"
+                cancelText="取消"
                 isDestructive={true}
                 onConfirm={handleDeleteConfirm}
                 onCancel={() => setShowDeleteConfirm(false)}

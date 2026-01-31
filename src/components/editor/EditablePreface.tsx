@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { EditableText } from './EditableText';
+import { EditableText, EditableTextHandle } from './EditableText';
 import { Sparkles, Loader2 } from 'lucide-react';
 
 interface EditablePrefaceProps {
@@ -9,14 +9,16 @@ interface EditablePrefaceProps {
   description: string;
   onUpdate: (field: 'title' | 'description', value: string) => void;
   items: any[];
+  titleRef?: React.RefObject<EditableTextHandle>;
+  isMobile?: boolean;
 }
 
-export function EditablePreface({ title, description, onUpdate, items }: EditablePrefaceProps) {
+export function EditablePreface({ title, description, onUpdate, items, titleRef, isMobile }: EditablePrefaceProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleGeneratePreface = async () => {
     if (items.length === 0) {
-      alert("Please add some photos first.");
+      alert("请至少选择一张底片");
       return;
     }
 
@@ -73,7 +75,7 @@ export function EditablePreface({ title, description, onUpdate, items }: Editabl
       const validImages = imageUrls.filter(url => url && url.startsWith('data:'));
 
       if (validImages.length === 0) {
-          alert("Could not process images for analysis.");
+          alert("无法处理图片以进行分析。");
           setIsGenerating(false);
           return;
       }
@@ -93,7 +95,7 @@ export function EditablePreface({ title, description, onUpdate, items }: Editabl
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate preface');
+        throw new Error(data.error || '生成序言失败');
       }
 
       // 3. Update Description
@@ -103,39 +105,61 @@ export function EditablePreface({ title, description, onUpdate, items }: Editabl
 
     } catch (error: any) {
       console.error("Generation failed:", error);
-      alert(`Generation failed: ${error.message}`);
+      alert(`生成失败：${error.message}`);
     } finally {
       setIsGenerating(false);
     }
   };
 
   return (
-    <div className="shrink-0 w-screen h-full flex flex-col justify-center items-center text-center relative border-r border-white/10 snap-start">
-        <div className="max-w-2xl text-center p-8 flex flex-col items-center">
+    <div className={`shrink-0 w-screen flex flex-col justify-center items-center text-center relative border-r border-white/10 snap-start ${isMobile ? 'h-auto py-2 pt-24' : 'h-full'}`}>
+        <div className={`max-w-2xl text-center flex flex-col items-center ${isMobile ? 'p-4' : 'p-8'}`}>
             {/* Title Input */}
             <EditableText 
+                ref={titleRef}
                 initialValue={title} 
                 onSave={(val) => onUpdate('title', val)}
-                className="font-serif text-6xl md:text-8xl text-white mb-8 tracking-tighter bg-transparent outline-none w-full text-center placeholder:text-white/20"
-                placeholder="EXHIBITION TITLE"
+                className={`font-serif text-white tracking-tighter bg-transparent outline-none w-full text-center placeholder:text-white/20 ${isMobile ? 'text-4xl mb-4 leading-tight' : 'text-6xl md:text-8xl mb-8'}`}
+                placeholder="展览标题"
             />
             
             {/* Description Input */}
             <div className="relative group w-full max-w-lg mx-auto">
                 <textarea 
                     value={description}
-                    onChange={(e) => onUpdate('description', e.target.value)}
+                    onChange={(e) => {
+                        onUpdate('description', e.target.value);
+                        if (!isMobile) {
+                            // Auto-expand only on desktop or if we want dynamic height
+                            e.target.style.height = 'auto';
+                            e.target.style.height = e.target.scrollHeight + 'px';
+                        }
+                    }}
+                    onFocus={(e) => {
+                         if (isMobile) {
+                            // On mobile, maybe we don't want auto-expand if we fix height? 
+                            // User asked for 1/2 height. Let's keep it fixed or simple.
+                            // e.target.style.height = 'auto';
+                            // e.target.style.height = Math.max(e.target.scrollHeight, 150) + 'px'; 
+                         }
+                    }}
+                    onBlur={(e) => {
+                        if (isMobile && !e.target.value) {
+                             // e.target.style.height = '40px'; 
+                        }
+                    }}
                     onPointerDown={(e) => e.stopPropagation()}
-                    placeholder="Write your curatorial statement here..."
-                    className="font-sans text-gray-400 text-lg leading-relaxed bg-transparent outline-none resize-none text-center w-full h-48 placeholder:text-gray-600 focus:text-white transition-colors custom-scrollbar"
+                    placeholder="写下这一刻的想法（可选）..."
+                    rows={isMobile ? 3 : undefined}
+                    className={`font-sans text-gray-400 text-lg leading-relaxed bg-transparent outline-none resize-none text-center w-full placeholder:text-gray-600 focus:text-white transition-colors custom-scrollbar ${isMobile ? 'h-24' : 'h-48'}`}
                 />
                 
                 {/* AI Generate Button - Removed as requested */}
             </div>
         </div>
         
-        <div className="absolute bottom-8 text-white/20 text-xs tracking-widest uppercase">
-            Start of Exhibition
+        <div className={`absolute text-white/20 text-xs tracking-widest uppercase ${isMobile ? 'bottom-0 pb-2 relative mt-4' : 'bottom-8'}`}>
+            展览序言
         </div>
     </div>
   );

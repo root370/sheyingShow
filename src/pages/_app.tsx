@@ -1,23 +1,32 @@
-import '@/styles/globals.css'
-import type { AppProps } from 'next/app'
+import '@/styles/globals.css';
+import type { AppProps } from 'next/app';
 import { ExhibitionProvider } from '@/context/ExhibitionContext';
 
-// 临时禁用 Google Fonts，改用系统字体以修复国内构建问题
-// import { Cormorant_Garamond, Manrope } from 'next/font/google'
+// Temporarily removed next/font/google due to build timeout in CN server
+// import { Cormorant_Garamond, Manrope } from '@next/font/google';
 
-// const cormorant = Cormorant_Garamond({ ... })
-// const manrope = Manrope({ ... })
+// const cormorant = Cormorant_Garamond({ 
+//   subsets: ['latin'],
+//   variable: '--font-cormorant-garamond',
+//   display: 'swap',
+//   weight: '400',
+//   style: 'normal',
+// });
 
-import WelcomeLetter from '@/components/WelcomeLetter';
+// const manrope = Manrope({ 
+//   subsets: ['latin'],
+//   variable: '--font-manrope',
+//   display: 'swap',
+//   weight: '400',
+// });
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <ExhibitionProvider>
-      {/* 暂时移除字体变量 */}
-      <main className={`font-sans`}>
-        <WelcomeLetter />
+    // <div className={`${cormorant.variable} ${manrope.variable}`}>
+    <div className="font-variable-fallback">
+      <ExhibitionProvider>
         <Component {...pageProps} />
-      </main>
-    </ExhibitionProvider>
-  )
+      </ExhibitionProvider>
+    </div>
+  );
 }

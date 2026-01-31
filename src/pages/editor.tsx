@@ -5,7 +5,8 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragOverlay,
@@ -22,6 +23,7 @@ import {
   horizontalListSortingStrategy,
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
+import { encode } from 'blurhash';
 // Note: We need to make sure these components are available or imported correctly
 // If they were in src/app/editor/..., we need to move them or import from src/app_backup/editor/...
 // For now, I will assume they are available or I will fix imports later if build fails.
@@ -30,6 +32,9 @@ import { SortablePhoto } from '@/components/editor/SortablePhoto';
 import { DroppablePool } from '@/components/editor/DroppablePool';
 import { GalleryPreview } from '@/components/editor/GalleryPreview';
 import { PublishButton } from '@/components/editor/PublishButton';
+import { PledgeModal } from '@/components/editor/PledgeModal';
+import { EditableTextHandle } from '@/components/editor/EditableText';
+import { Toast } from '@/components/Toast';
 
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/router';
@@ -50,6 +55,18 @@ export default function EditorPage() {
   const [poolItems, setPoolItems] = useState<any[]>([]); // Start empty
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [showPledge, setShowPledge] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
+  const [isMobile, setIsMobile] = useState(false);
+
+  React.useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
+  const titleInputRef = React.useRef<EditableTextHandle>(null);
   
   // State for Publish Payload
   const [prefaceData, setPrefaceData] = useState<any>({ title: '', description: '' });
@@ -60,7 +77,17 @@ export default function EditorPage() {
   const [initialSpacings, setInitialSpacings] = useState<{[key: string]: number} | undefined>(undefined);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -130,7 +157,8 @@ export default function EditorPage() {
                     title: p.title, // Load title
                     year: p.year,   // Load year
                     gap_after: p.gap_after,
-                    aspectRatio: 'landscape' // Default, will update if we check dimensions
+                    aspectRatio: 'landscape', // Default, will update if we check dimensions
+                    blurhash: p.blurhash
                 });
                 spacings[p.id] = p.gap_after;
             }
@@ -146,6 +174,7 @@ export default function EditorPage() {
     const newItems = await Promise.all(Array.from(files).map(async (file) => {
       let exifData = null;
       let aspectRatio = 'landscape';
+      let blurhash = null;
       
       try {
         // 1. Parse EXIF
@@ -165,15 +194,35 @@ export default function EditorPage() {
             };
         }
 
-        // 2. Determine Aspect Ratio (Load image to get dimensions)
+        // 2. Determine Aspect Ratio & Generate BlurHash
         await new Promise((resolve) => {
              const img = new Image();
              img.onload = () => {
+                 // Aspect Ratio
                  if (img.height > img.width) {
                      aspectRatio = 'portrait';
                  } else if (img.height === img.width) {
                      aspectRatio = 'square';
                  }
+                 
+                 // BlurHash
+                 try {
+                     const canvas = document.createElement("canvas");
+                     // Scale down for performance and blurhash requirements
+                     const w = 32;
+                     const h = Math.round(32 * (img.height / img.width));
+                     canvas.width = w;
+                     canvas.height = h;
+                     const ctx = canvas.getContext("2d");
+                     if (ctx) {
+                         ctx.drawImage(img, 0, 0, w, h);
+                         const imageData = ctx.getImageData(0, 0, w, h);
+                         blurhash = encode(imageData.data, w, h, 4, 3);
+                     }
+                 } catch (e) {
+                     console.warn("Blurhash generation failed", e);
+                 }
+
                  resolve(null);
              };
              img.onerror = () => resolve(null); // Fallback
@@ -190,10 +239,24 @@ export default function EditorPage() {
         alt: file.name,
         file: file, // Store the File object for later upload
         exif: exifData,
-        aspectRatio: aspectRatio
+        aspectRatio: aspectRatio,
+        blurhash: blurhash
       };
     }));
     setPoolItems((prev) => [...prev, ...newItems]);
+    
+    // Mobile: Auto-add to gallery
+    if (isMobile) {
+        const galleryAdds = newItems.map(item => ({
+            ...item,
+            id: `${item.id}-${Date.now()}`,
+            sourceId: item.id
+        }));
+        setGalleryItems(prev => [...prev, ...galleryAdds]);
+        setToast({ visible: true, message: "已添加至展览" });
+    } else if (newItems.length > 0) {
+        setToast({ visible: true, message: "影像已留存" });
+    }
   };
 
   const handlePreviewStateChange = (state: any) => {
@@ -218,21 +281,115 @@ export default function EditorPage() {
     setGalleryItems(prev => prev.filter(i => i.id !== itemId));
 
     // Add back to pool (if it was an upload, maybe we want to keep it available?)
-    setPoolItems(prev => [...prev, item]);
+    setPoolItems(prev => {
+        const sourceId = item.sourceId || item.id;
+        const exists = prev.some(p => p.id === sourceId);
+        if (exists) return prev;
+        
+        // Restore to original ID if available and remove gallery-specific props
+        const { id, ...rest } = item;
+        const restoredItem = { 
+            ...rest, 
+            id: sourceId 
+        };
+        
+        // Remove 'uniqueId' if it exists (it was added during drag/drop in some versions, though not seen here explicitly but good practice)
+        // Also remove sort_order or gap_after if they shouldn't be in pool? 
+        // Actually pool items are simple {id, src, file, exif, ...}
+        
+        return [...prev, restoredItem];
+    });
+  };
+
+  // Mobile: Handle moving items up/down
+  const handleMoveItem = (itemId: string, direction: 'up' | 'down') => {
+      setGalleryItems(prev => {
+          const index = prev.findIndex(i => i.id === itemId);
+          if (index === -1) return prev;
+          
+          const newItems = [...prev];
+          if (direction === 'up' && index > 0) {
+              [newItems[index], newItems[index - 1]] = [newItems[index - 1], newItems[index]];
+          } else if (direction === 'down' && index < newItems.length - 1) {
+              [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+          }
+          return newItems;
+      });
+  };
+
+  // Mobile: Handle adding from pool to gallery
+  const handleAddToGallery = (item: any) => {
+      // Check if item is already in gallery (by sourceId or id)
+      const existingIndex = galleryItems.findIndex(g => (g.sourceId && g.sourceId === item.id) || g.id === item.id);
+      
+      if (existingIndex !== -1) {
+          // Remove (Toggle)
+          setGalleryItems(prev => prev.filter((_, i) => i !== existingIndex));
+          setToast({ visible: true, message: "已移除" });
+      } else {
+          // Add
+          // Do NOT remove from poolItems on Mobile (allow Toggle)
+          // Generate new ID to avoid conflict with pool item
+          const newItem = { 
+              ...item, 
+              id: `${item.id}-${Date.now()}`, 
+              sourceId: item.id 
+          };
+          setGalleryItems(prev => [...prev, newItem]);
+          setToast({ visible: true, message: "已放入展览" });
+      }
+  };
+
+  const handleBatchAdd = () => {
+    if (poolItems.length === 0) return;
+
+    const newItems = poolItems.map(item => ({
+        ...item,
+        id: `${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        sourceId: item.sourceId || item.id
+    }));
+
+    setGalleryItems(prev => [...prev, ...newItems]);
+    setPoolItems([]); // Clear the pool after adding
+    setToast({ visible: true, message: "全卷底片已上墙" });
   };
 
   const isPublishingRef = React.useRef(false);
 
-  const handlePublish = async () => {
+  const handlePublishClick = async () => {
+    // 0. Empty Check
+    if (galleryItems.length === 0) {
+        setToast({ visible: true, message: "请至少选择一张照片" });
+        return;
+    }
+
+    // 1. Validation
+    if (!prefaceData.title || !prefaceData.title.trim()) {
+        setToast({ visible: true, message: "请给展览起个名字" });
+        titleInputRef.current?.focus();
+        titleInputRef.current?.shake();
+        return;
+    }
+
+    // 2. Show Pledge Modal
+    setShowPledge(true);
+  };
+
+  const handleConfirmPublish = async () => {
     if (isPublishingRef.current) return;
     
     isPublishingRef.current = true;
     setIsPublishing(true);
+    // Pledge modal stays open or we can close it, but keeping it open with loading state is better UX usually, 
+    // or we can close it and show the full screen loading overlay.
+    // The design says "Yes, Develop It" triggers API.
+    // Let's close pledge modal first or let the overlay take over.
+    setShowPledge(false); 
     
     try {
     // 2. The Data Logic (The Payload)
     const payload = {
-      title: prefaceData.title || "UNTITLED EXHIBITION",
+      title: prefaceData.title || "未命名展览",
       description: prefaceData.description,
       items: galleryItems.map(item => ({
         id: item.id,
@@ -350,7 +507,8 @@ export default function EditorPage() {
             year: item.year || "",
             gap_after: spacingData[item.id] || 200,
             sort_order: i,
-            exif_data: item.exif || null // Save EXIF data
+            exif_data: item.exif || null, // Save EXIF data
+            blurhash: item.blurhash || null // Save BlurHash
         };
 
         if (i === 0) {
@@ -413,7 +571,7 @@ export default function EditorPage() {
     router.push(`/exhibition/${targetExhibitionId}`);
     } catch (error) {
         console.error("Publish failed:", error);
-        alert("Publish failed. Please try again.");
+        alert("发布失败，请重试。");
         setIsPublishing(false);
         isPublishingRef.current = false;
     }
@@ -421,6 +579,11 @@ export default function EditorPage() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    // Lock body scroll on mobile to prevent pull-to-refresh and other gestures during drag
+    if (typeof window !== 'undefined') {
+        document.body.style.overflow = 'hidden';
+        document.body.style.touchAction = 'none';
+    }
   };
 
   const handleDragOver = (event: DragOverEvent) => {
@@ -436,6 +599,12 @@ export default function EditorPage() {
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    // Restore body scroll on mobile
+    if (typeof window !== 'undefined') {
+        document.body.style.overflow = '';
+        document.body.style.touchAction = '';
+    }
+
     const { active, over } = event;
     const activeIdStr = active.id as string;
 
@@ -492,7 +661,10 @@ export default function EditorPage() {
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <main className="h-screen w-screen bg-[#1a1a1a] flex flex-col overflow-hidden relative">
+      <main 
+        className="h-screen w-screen bg-[#1a1a1a] flex flex-col overflow-hidden relative"
+        onContextMenu={(e) => e.preventDefault()}
+      >
         {/* SVG Grid Pattern Background */}
       <div 
           className="absolute inset-0 pointer-events-none opacity-10"
@@ -507,11 +679,24 @@ export default function EditorPage() {
         className="fixed top-8 left-8 z-50 flex items-center gap-2 text-white/50 hover:text-white transition-colors group"
       >
         <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
-        <span className="font-sans text-xs tracking-widest uppercase">Lobby</span>
+        <span className="font-sans text-xs tracking-widest uppercase">大厅</span>
       </Link>
 
       {/* 1. The UI (The Trigger) */}
-      <PublishButton onPublish={handlePublish} isPublishing={isPublishing} />
+      <PublishButton onPublish={handlePublishClick} isPublishing={isPublishing} />
+
+      <PledgeModal 
+        isOpen={showPledge} 
+        onConfirm={handleConfirmPublish} 
+        onCancel={() => setShowPledge(false)}
+        isPublishing={isPublishing}
+      />
+
+      <Toast 
+        isVisible={toast.visible} 
+        message={toast.message} 
+        onClose={() => setToast(prev => ({ ...prev, visible: false }))} 
+      />
 
       {/* Full Screen Loading Overlay */}
       {isPublishing && (
@@ -524,13 +709,13 @@ export default function EditorPage() {
                 />
             </div>
             <div className="absolute mt-48 font-serif text-white tracking-[0.3em] animate-pulse">
-                DEVELOPING...
+                正在显影...
             </div>
         </div>
       )}
 
-      {/* Top Area: Gallery Preview (70vh on Desktop, 60vh on Mobile) */}
-      <div className="h-[60dvh] md:h-[70dvh] w-full border-b border-white/10 relative overflow-hidden">
+      {/* Top Area: Gallery Preview (70vh) */}
+      <div className="h-[70dvh] w-full border-b border-white/10 relative overflow-hidden">
            <GalleryPreview 
              items={galleryItems} 
              onStateChange={handlePreviewStateChange} 
@@ -538,12 +723,21 @@ export default function EditorPage() {
              onRemoveItem={handleRemoveItem}
              initialPreface={initialPreface}
              initialSpacings={initialSpacings}
+             titleRef={titleInputRef}
+             isMobile={isMobile}
+             onMoveItem={handleMoveItem}
            />
       </div>
 
-        {/* Bottom Area: Light Table (30vh on Desktop, 40vh on Mobile) */}
-        <div className="h-[40dvh] md:h-[30dvh] w-full bg-white/5 backdrop-blur-md relative">
-            <DroppablePool items={poolItems} onUpload={handleUpload} />
+        {/* Bottom Area: Light Table (30vh) */}
+        <div className="h-[30dvh] w-full bg-white/5 backdrop-blur-md relative">
+            <DroppablePool 
+                items={poolItems} 
+                onUpload={handleUpload} 
+                onAdd={handleAddToGallery}
+                onBatchAdd={handleBatchAdd}
+                isMobile={isMobile}
+            />
         </div>
 
         <DragOverlay dropAnimation={dropAnimation}>

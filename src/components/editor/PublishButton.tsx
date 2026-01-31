@@ -39,9 +39,9 @@ export function PublishButton({ onPublish, isPublishing }: PublishButtonProps) {
         ${status === 'published' ? 'bg-green-500 text-white' : ''}
       `}
     >
-      {status === 'idle' && 'PUBLISH'}
-      {status === 'developing' && 'DEVELOPING...'}
-      {status === 'published' && 'PUBLISHED'}
+      {status === 'idle' && '发布'}
+      {status === 'developing' && '正在显影...'}
+      {status === 'published' && '发布成功'}
     </button>
   );
 }

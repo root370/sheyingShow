@@ -5,7 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import PhotoFrameComponent from '@/components/PhotoFrame'; // Import default
 import { EditableText } from './EditableText';
-import { X } from 'lucide-react';
+import { X, ChevronUp, ChevronDown, Check } from 'lucide-react';
 
 interface SortablePhotoProps {
   id: string;
@@ -19,9 +19,16 @@ interface SortablePhotoProps {
   aspectRatio?: 'landscape' | 'portrait' | 'square';
   onUpdate?: (field: 'title' | 'year', value: string) => void;
   onRemove?: () => void;
+  onClick?: () => void; // Add onClick prop
+  isMobile?: boolean;
+  enableAI?: boolean;
+  onMove?: (direction: 'up' | 'down') => void;
+  isFirst?: boolean;
+  isLast?: boolean;
+  isSelected?: boolean;
 }
 
-export function SortablePhoto({ id, src, type, title = "", year = "", exif, file, aspectRatio = 'landscape', onUpdate, onRemove }: SortablePhotoProps) {
+export function SortablePhoto({ id, src, type, title = "", year = "", exif, file, aspectRatio = 'landscape', onUpdate, onRemove, onClick, isMobile = false, enableAI = true, onMove, isFirst, isLast, isSelected = false }: SortablePhotoProps) {
   const {
     attributes,
     listeners,
@@ -29,18 +36,23 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id, disabled: isMobile });
 
-  // 移除硬编码的高度限制，改用最大高度限制，让图片尽可能大但又不溢出容器(50vh)
-  // 通过 contentMaxHeight 传递给 img 标签，确保图片本身受到限制，从而让外层 div (h-auto) 能够正确收缩
-  let frameHeightClass = "h-auto max-h-[46vh]"; 
+  // Desktop: restricted height
+  let frameHeightClass = isMobile 
+      ? "w-full h-auto" // Mobile: full width, auto height
+      : "h-auto max-h-[46vh]"; // Desktop: restricted height
   
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.3 : 1,
     zIndex: isDragging ? 100 : 'auto',
+    // touchAction handled by class
   };
+
+  // On mobile, disable drag listeners to prevent scroll conflict and enable native scrolling
+  const dndListeners = isMobile ? {} : listeners;
 
   if (type === 'framed') {
       return (
@@ -48,12 +60,17 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
             ref={setNodeRef} 
             style={style} 
             {...attributes} 
-            className="group relative shrink-0"
+            {...dndListeners}
+            className={`group relative ${isMobile ? 'w-full mb-8' : 'shrink-0 prevent-select'}`}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }}
         >
              {/* Transform to PhotoFrame (Museum Matte) */}
              <div 
-                {...listeners}
-                className="w-auto h-full flex items-center justify-center cursor-grab active:cursor-grabbing relative"
+                {...dndListeners}
+                className={`${isMobile ? 'w-full h-auto flex-col' : 'w-auto h-full'} flex items-center justify-center cursor-grab active:cursor-grabbing relative`}
              > {/* Use flex to center and allow dynamic width */}
                 <PhotoFrameComponent 
                     src={src} 
@@ -62,11 +79,35 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
                     exif={exif}
                     file={file}
                     aspectRatio={aspectRatio} 
-                    className={`${frameHeightClass} w-auto`} // Ensure height constraint and auto width
+                    className={`${frameHeightClass} ${isMobile ? 'w-full' : 'w-auto'} select-none`} // Ensure height constraint and auto width
                     skipDeveloping={true} // Skip darkroom effect in editor
-                    contentMaxHeight="46vh" // 直接限制图片高度，配合外层 h-auto 实现贴合
+                    contentMaxHeight={isMobile ? undefined : "46vh"} // 直接限制图片高度，配合外层 h-auto 实现贴合
+                    isMobile={isMobile}
+                    enableAI={enableAI}
+                    // Force the image to cover the frame area without overflowing
+                    objectFit="cover"
                 />
                 
+                {/* Mobile Sort Controls */}
+                {isMobile && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-6 z-50">
+                        <button 
+                           onClick={(e) => { e.stopPropagation(); onMove?.('up'); }}
+                           disabled={isFirst}
+                           className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10 disabled:opacity-0 active:scale-95 transition-all shadow-lg"
+                        >
+                           <ChevronUp size={20} />
+                        </button>
+                        <button 
+                           onClick={(e) => { e.stopPropagation(); onMove?.('down'); }}
+                           disabled={isLast}
+                           className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10 disabled:opacity-0 active:scale-95 transition-all shadow-lg"
+                        >
+                           <ChevronDown size={20} />
+                        </button>
+                    </div>
+                )}
+
                 {/* Delete Button (Only visible on hover in non-dragging state) */}
                 {!isDragging && (
                     <button
@@ -77,7 +118,7 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
                             onRemove?.();
                         }}
                         className="absolute -top-3 -right-3 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-50 shadow-md cursor-pointer"
-                        title="Remove photo"
+                        title="移除底片"
                     >
                         <X size={12} strokeWidth={3} />
                     </button>
@@ -90,14 +131,14 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
                     initialValue={title} 
                     onSave={(val) => onUpdate?.('title', val)}
                     className="font-serif text-white text-xl tracking-widest uppercase leading-none block mb-2"
-                    placeholder="TITLE"
+                    placeholder="作品名称"
                 />
                 <div className="flex justify-center">
                     <EditableText 
                         initialValue={year} 
                         onSave={(val) => onUpdate?.('year', val)}
                         className="text-[10px] font-sans text-gray-400 tracking-[0.2em] uppercase"
-                        placeholder="YEAR"
+                        placeholder="年份"
                     />
                 </div>
              </div>
@@ -111,11 +152,21 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
       ref={setNodeRef}
       style={style}
       {...attributes}
-      {...listeners}
-      className="relative w-24 h-24 bg-white p-1 cursor-grab active:cursor-grabbing shadow-sm hover:scale-105 transition-transform"
+      {...dndListeners}
+      onClick={onClick}
+      className={`relative w-24 h-24 bg-white p-1 shadow-sm hover:scale-105 transition-transform prevent-select ${!isMobile ? 'cursor-grab active:cursor-grabbing' : ''} ${isSelected ? 'ring-2 ring-white' : ''}`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
     >
-      <div className="w-full h-full overflow-hidden bg-gray-100">
-         <img src={src} alt="" className="w-full h-full object-cover" />
+      <div className="w-full h-full overflow-hidden bg-gray-100 relative">
+         <img src={src} alt="" draggable={false} className={`w-full h-full object-cover pointer-events-none ${isSelected ? 'opacity-60' : ''}`} />
+         {isSelected && (
+             <div className="absolute top-1 right-1 bg-green-500 rounded-full p-0.5 shadow-sm">
+                 <Check size={12} className="text-white" strokeWidth={3} />
+             </div>
+         )}
       </div>
     </div>
   );

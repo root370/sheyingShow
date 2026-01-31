@@ -1,6 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+
+export interface EditableTextHandle {
+  focus: () => void;
+  shake: () => void;
+}
 
 interface EditableTextProps {
   initialValue: string;
@@ -9,10 +14,25 @@ interface EditableTextProps {
   onSave?: (value: string) => void;
 }
 
-export function EditableText({ initialValue, className = '', placeholder = 'Type here...', onSave }: EditableTextProps) {
+export const EditableText = forwardRef<EditableTextHandle, EditableTextProps>(({ initialValue, className = '', placeholder = '点击输入...', onSave }, ref) => {
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState(initialValue);
+  const [isShaking, setIsShaking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      setIsEditing(true);
+      // Wait for render
+      setTimeout(() => {
+          inputRef.current?.focus();
+      }, 0);
+    },
+    shake: () => {
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 500);
+    }
+  }));
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -37,6 +57,8 @@ export function EditableText({ initialValue, className = '', placeholder = 'Type
     }
   };
 
+  const shakeClass = isShaking ? 'animate-[shake_0.5s_cubic-bezier(.36,.07,.19,.97)_both]' : '';
+
   if (isEditing) {
     return (
       <input
@@ -47,7 +69,8 @@ export function EditableText({ initialValue, className = '', placeholder = 'Type
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         onPointerDown={(e) => e.stopPropagation()} // Prevent drag start
-        className={`bg-transparent border-b border-gray-400 outline-none w-full text-center ${className}`}
+        className={`bg-transparent border-b border-gray-400 outline-none w-full text-center select-text ${className} ${shakeClass}`}
+        style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         placeholder={placeholder}
       />
     );
@@ -57,9 +80,11 @@ export function EditableText({ initialValue, className = '', placeholder = 'Type
     <div 
         onClick={() => setIsEditing(true)} 
         onPointerDown={(e) => e.stopPropagation()} // Prevent drag start when clicking to edit
-        className={`cursor-text hover:bg-gray-100/50 rounded px-1 transition-colors ${className}`}
+        className={`cursor-text hover:bg-gray-100/50 rounded px-1 transition-colors ${className} ${shakeClass}`}
     >
       {value || <span className="text-gray-400 italic">{placeholder}</span>}
     </div>
   );
-}
+});
+
+EditableText.displayName = 'EditableText';

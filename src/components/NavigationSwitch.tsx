@@ -15,8 +15,8 @@ export default function NavigationSwitch({ currentMode }: NavigationSwitchProps)
       <div className="md:hidden bg-[#151515] backdrop-blur-xl border border-white/10 rounded-full p-1 pl-4 pr-1 flex items-center shadow-2xl gap-4">
         <Link href="/dashboard" className="group relative outline-none">
           <div className={`relative z-10 flex flex-col items-start leading-none py-2 px-1 transition-colors duration-300 ${currentMode === 'dashboard' ? 'text-black' : 'text-white/70 group-hover:text-white'}`}>
-            <span className="text-[9px] font-bold tracking-[0.2em] uppercase">MY</span>
-            <span className="text-[9px] font-bold tracking-[0.2em] uppercase">GALLERY</span>
+            <span className="text-[9px] font-bold tracking-[0.2em] uppercase">我的</span>
+            <span className="text-[9px] font-bold tracking-[0.2em] uppercase">展览</span>
           </div>
           {currentMode === 'dashboard' && (
             <motion.div
@@ -51,7 +51,7 @@ export default function NavigationSwitch({ currentMode }: NavigationSwitchProps)
             />
           )}
           <span className={`relative z-10 transition-colors duration-300 ${currentMode === 'dashboard' ? 'text-black' : 'text-neutral-400 hover:text-white'}`}>
-            My Gallery
+            我的展览
           </span>
         </Link>
         <Link href="/" className="relative px-8 py-3 rounded-full text-[10px] font-sans font-bold tracking-[0.2em] transition-colors duration-500 outline-none focus-visible:ring-1 focus-visible:ring-white/30 uppercase">
@@ -63,7 +63,7 @@ export default function NavigationSwitch({ currentMode }: NavigationSwitchProps)
             />
           )}
            <span className={`relative z-10 transition-colors duration-300 ${currentMode === 'explore' ? 'text-black' : 'text-neutral-400 hover:text-white'}`}>
-            Scout
+            探索
           </span>
         </Link>
       </div>
