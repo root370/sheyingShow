@@ -115,7 +115,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               } else {
                   // Visitor (Logged In)
                   if (newState) {
-                      setToastMessage("点击图片任意位置评论。");
+                      setToastMessage("点击图片任意位置留言。");
                   } else {
                       setToastMessage(null);
                   }
@@ -136,7 +136,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               setMobileInteractionMode(mode);
               
               if (mode === 'add') {
-                  setToastMessage("点击图片空白处评论");
+                  setToastMessage("点击图片空白处留言");
               } else if (mode === 'view') {
                   setToastMessage(isAuthor ? "评论已显示" : "查看评论模式");
               } else {
@@ -590,7 +590,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         {/* Guestbook Slide (Final) */}
         <div className={`flex flex-col justify-center items-center relative p-8 ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
             <div className="max-w-2xl w-full">
-                <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">评论</h2>
+                <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">留言</h2>
                 
                 {/* Message Input */}
                 <form onSubmit={handleSendMessage} className="mb-12 relative">
@@ -638,7 +638,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                     ))}
                     {guestbookEntries.length === 0 && (
                         <div className="col-span-full text-center text-white/20 font-serif italic">
-                            暂无评论...
+                            暂无留言...
                         </div>
                     )}
                 </div>
