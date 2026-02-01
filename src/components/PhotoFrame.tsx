@@ -1079,7 +1079,11 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                           <motion.div
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="absolute top-4 left-1/2 -translate-x-1/2 w-auto min-w-[120px] max-w-[200px] pointer-events-none"
+                              className={`absolute w-auto min-w-[120px] max-w-[200px] pointer-events-none ${
+                                  note.y > 80 ? 'bottom-8' : 'top-4'
+                              } ${
+                                  note.x < 20 ? 'left-0' : note.x > 80 ? 'right-0' : 'left-1/2 -translate-x-1/2'
+                              }`}
                           >
                               <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg px-3 py-2 shadow-xl">
                                   <div className="mb-1 border-b border-white/10 pb-1 flex justify-between items-center gap-2">
@@ -1090,8 +1094,12 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                   <p className="text-xs text-white font-sans leading-relaxed text-left break-words">
                                       {note.text}
                                   </p>
-                                  {/* Triangle Arrow */}
-                                  <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-black/80 border-r border-b border-white/20 rotate-45" />
+                                  {/* Triangle Arrow - Dynamic Position */}
+                                  <div className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-black/80 border-r border-b border-white/20 rotate-45 ${
+                                      note.y > 80 ? '-bottom-1.5 border-r border-b' : '-top-1.5 border-l border-t border-r-0 border-b-0'
+                                  }`} style={{
+                                      left: note.x < 20 ? '20%' : note.x > 80 ? '80%' : '50%'
+                                  }} />
                               </div>
                           </motion.div>
 
@@ -1749,7 +1757,13 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                          animate={{ opacity: 1, scale: 1, y: 0 }}
                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
                          transition={{ duration: 0.2 }}
-                         className={`absolute top-6 left-1/2 -translate-x-1/2 w-48 bg-black/90 backdrop-blur-md border border-white/10 shadow-xl rounded-sm p-3 flex flex-col gap-2 pointer-events-auto z-[60] ${activeTooltip === note.id ? 'z-[70]' : 'z-[60]'}`}
+                         className={`absolute w-48 bg-black/90 backdrop-blur-md border border-white/10 shadow-xl rounded-sm p-3 flex flex-col gap-2 pointer-events-auto z-[60] ${
+                             activeTooltip === note.id ? 'z-[70]' : 'z-[60]'
+                         } ${
+                             note.y > 80 ? 'bottom-8' : 'top-6'
+                         } ${
+                             note.x < 20 ? 'left-0' : note.x > 80 ? 'right-0' : 'left-1/2 -translate-x-1/2'
+                         }`}
                          onClick={(e) => {
                              e.stopPropagation();
                              setActiveTooltip(note.id);

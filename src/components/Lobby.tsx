@@ -119,9 +119,6 @@ export default function Lobby({ mode }: LobbyProps) {
           const updatedExplore = exploreCache.exhibitions.filter(e => e.id !== deletedId);
           setExploreCache(updatedExplore);
       }
-      
-      // Force refresh data from server to ensure sync
-      router.replace(router.asPath);
   };
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -259,7 +256,9 @@ export default function Lobby({ mode }: LobbyProps) {
         } else {
             console.log('Raw Exhibitions Data:', data);
             const transformExhibitions = (rawList: any[], type: 'own' | 'collected' | 'public') => {
-                return rawList.map((ex: any) => {
+                return rawList
+                .filter((ex: any) => ex.cover_url && ex.cover_url.length > 0) // Filter out exhibitions with no cover
+                .map((ex: any) => {
                     console.log(`Exhibition ${ex.id} cover_url:`, ex.cover_url);
                     return {
                        id: ex.id,
@@ -267,7 +266,7 @@ export default function Lobby({ mode }: LobbyProps) {
                        description: ex.description,
                        year: new Date(ex.created_at).getFullYear().toString(),
                        // Ensure we use the DB cover_url if present
-                       cover: ex.cover_url && ex.cover_url.length > 0 ? ex.cover_url : "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&q=80&w=1988", 
+                       cover: ex.cover_url, 
                        rotate: '0deg',
                        offsetY: 0,
                        borderRadius: "0px",
@@ -414,7 +413,7 @@ export default function Lobby({ mode }: LobbyProps) {
 
                 <div>
                   <label className="block text-[10px] font-sans text-gray-400 uppercase tracking-widest mb-2">
-                    新口令
+                    新密码
                   </label>
                   <input
                     type="password"

@@ -18,9 +18,10 @@ interface GalleryPreviewProps {
   titleRef?: React.RefObject<EditableTextHandle>;
   isMobile?: boolean;
   onMoveItem?: (itemId: string, direction: 'up' | 'down') => void;
+  onSetCover?: (itemId: string) => void;
 }
 
-export function GalleryPreview({ items, onStateChange, onItemUpdate, onRemoveItem, initialPreface, initialSpacings, titleRef, isMobile: propIsMobile, onMoveItem }: GalleryPreviewProps) {
+export function GalleryPreview({ items, onStateChange, onItemUpdate, onRemoveItem, initialPreface, initialSpacings, titleRef, isMobile: propIsMobile, onMoveItem, onSetCover }: GalleryPreviewProps) {
   const { setNodeRef } = useDroppable({
     id: 'gallery-droppable',
   });
@@ -159,6 +160,8 @@ export function GalleryPreview({ items, onStateChange, onItemUpdate, onRemoveIte
                         isMobile={isMobile}
                         enableAI={false}
                         onMove={(direction) => onMoveItem?.(item.id, direction)}
+                        isCover={item.isCover}
+                        onSetCover={() => onSetCover?.(item.id)}
                     />
                     
                     {/* Add ResizeHandle after each item (including the last one for padding) */}

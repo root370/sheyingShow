@@ -112,54 +112,34 @@ export function EditablePreface({ title, description, onUpdate, items, titleRef,
   };
 
   return (
-    <div className={`shrink-0 w-screen flex flex-col justify-center items-center text-center relative border-r border-white/10 snap-start ${isMobile ? 'h-auto py-2 pt-24' : 'h-full'}`}>
-        <div className={`max-w-2xl text-center flex flex-col items-center ${isMobile ? 'p-4' : 'p-8'}`}>
+    <div className={`shrink-0 w-screen flex flex-col justify-center items-center text-center relative snap-start ${isMobile ? 'h-auto py-2 pt-24 px-6' : 'h-full p-8'}`}>
+        <div className={`w-full max-w-2xl flex flex-col items-center`}>
             {/* Title Input */}
             <EditableText 
                 ref={titleRef}
                 initialValue={title} 
                 onSave={(val) => onUpdate('title', val)}
-                className={`font-serif text-white tracking-tighter bg-transparent outline-none w-full text-center placeholder:text-white/20 ${isMobile ? 'text-4xl mb-4 leading-tight' : 'text-6xl md:text-8xl mb-8'}`}
+                className={`font-serif text-white tracking-tight bg-transparent outline-none w-full text-center placeholder:text-white/30 ${isMobile ? 'text-3xl mb-2' : 'text-6xl md:text-8xl mb-8'}`}
                 placeholder="展览标题"
             />
             
             {/* Description Input */}
-            <div className="relative group w-full max-w-lg mx-auto">
+            <div className="relative group w-full">
                 <textarea 
                     value={description}
                     onChange={(e) => {
                         onUpdate('description', e.target.value);
                         if (!isMobile) {
-                            // Auto-expand only on desktop or if we want dynamic height
                             e.target.style.height = 'auto';
                             e.target.style.height = e.target.scrollHeight + 'px';
                         }
                     }}
-                    onFocus={(e) => {
-                         if (isMobile) {
-                            // On mobile, maybe we don't want auto-expand if we fix height? 
-                            // User asked for 1/2 height. Let's keep it fixed or simple.
-                            // e.target.style.height = 'auto';
-                            // e.target.style.height = Math.max(e.target.scrollHeight, 150) + 'px'; 
-                         }
-                    }}
-                    onBlur={(e) => {
-                        if (isMobile && !e.target.value) {
-                             // e.target.style.height = '40px'; 
-                        }
-                    }}
                     onPointerDown={(e) => e.stopPropagation()}
-                    placeholder="写下这一刻的想法（可选）..."
-                    rows={isMobile ? 3 : undefined}
-                    className={`font-sans text-gray-400 text-lg leading-relaxed bg-transparent outline-none resize-none text-center w-full placeholder:text-gray-600 focus:text-white transition-colors custom-scrollbar ${isMobile ? 'h-24' : 'h-48'}`}
+                    placeholder="这些图片带给你怎么样的感受..."
+                    rows={isMobile ? 2 : undefined}
+                    className={`font-sans text-white/50 text-sm leading-relaxed bg-transparent outline-none resize-none text-center w-full placeholder:text-white/20 focus:text-white/80 transition-colors custom-scrollbar ${isMobile ? 'h-16' : 'h-48'}`}
                 />
-                
-                {/* AI Generate Button - Removed as requested */}
             </div>
-        </div>
-        
-        <div className={`absolute text-white/20 text-xs tracking-widest uppercase ${isMobile ? 'bottom-0 pb-2 relative mt-4' : 'bottom-8'}`}>
-            展览序言
         </div>
     </div>
   );

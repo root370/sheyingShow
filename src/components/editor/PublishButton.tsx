@@ -32,11 +32,11 @@ export function PublishButton({ onPublish, isPublishing }: PublishButtonProps) {
       onClick={handleClick}
       disabled={status === 'developing' || isPublishing}
       className={`
-        fixed top-8 right-8 z-50 px-6 py-3 
-        bg-white text-black font-serif font-bold tracking-[0.2em] text-xs uppercase
-        transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95
-        disabled:opacity-80 disabled:cursor-wait
-        ${status === 'published' ? 'bg-green-500 text-white' : ''}
+        fixed top-8 right-8 z-50 
+        text-white font-serif tracking-[0.1em] text-base
+        transition-all duration-300 active:opacity-70
+        disabled:opacity-30 disabled:cursor-not-allowed
+        ${status === 'published' ? 'text-green-400' : ''}
       `}
     >
       {status === 'idle' && '发布'}

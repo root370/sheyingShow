@@ -113,7 +113,7 @@ export default function SignUp() {
             </div>
 
             <div>
-              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">口令</label>
+              <label className="block text-xs uppercase tracking-wider text-neutral-500 mb-1">密码</label>
               <input
                 type="password"
                 required

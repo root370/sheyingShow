@@ -5,7 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import PhotoFrameComponent from '@/components/PhotoFrame'; // Import default
 import { EditableText } from './EditableText';
-import { X, ChevronUp, ChevronDown, Check } from 'lucide-react';
+import { X, ChevronUp, ChevronDown, Check, Star } from 'lucide-react';
 
 interface SortablePhotoProps {
   id: string;
@@ -26,9 +26,11 @@ interface SortablePhotoProps {
   isFirst?: boolean;
   isLast?: boolean;
   isSelected?: boolean;
+  isCover?: boolean; // New prop
+  onSetCover?: () => void; // New prop
 }
 
-export function SortablePhoto({ id, src, type, title = "", year = "", exif, file, aspectRatio = 'landscape', onUpdate, onRemove, onClick, isMobile = false, enableAI = true, onMove, isFirst, isLast, isSelected = false }: SortablePhotoProps) {
+export function SortablePhoto({ id, src, type, title = "", year = "", exif, file, aspectRatio = 'landscape', onUpdate, onRemove, onClick, isMobile = false, enableAI = true, onMove, isFirst, isLast, isSelected = false, isCover = false, onSetCover }: SortablePhotoProps) {
   const {
     attributes,
     listeners,
@@ -79,7 +81,7 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
                     exif={exif}
                     file={file}
                     aspectRatio={aspectRatio} 
-                    className={`${frameHeightClass} ${isMobile ? 'w-full' : 'w-auto'} select-none`} // Ensure height constraint and auto width
+                    className={`${frameHeightClass} ${isMobile ? 'w-full' : 'w-auto'} select-none ${isCover ? 'ring-2 ring-yellow-500/50' : ''}`} // Ensure height constraint and auto width
                     skipDeveloping={true} // Skip darkroom effect in editor
                     contentMaxHeight={isMobile ? undefined : "46vh"} // 直接限制图片高度，配合外层 h-auto 实现贴合
                     isMobile={isMobile}
@@ -88,6 +90,32 @@ export function SortablePhoto({ id, src, type, title = "", year = "", exif, file
                     objectFit="cover"
                 />
                 
+                {/* Cover Badge (Top Left) */}
+                {isCover && (
+                   <div className="absolute top-4 left-4 z-50 px-2 py-1 bg-black/60 backdrop-blur-md text-white text-[10px] font-sans tracking-widest uppercase border border-white/20 pointer-events-none">
+                      封面
+                   </div>
+                )}
+
+                {/* Set Cover Button (Top Right) */}
+                {isMobile && onSetCover && (
+                    <button
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!isCover) onSetCover();
+                        }}
+                        className={`absolute top-4 right-4 z-50 p-2 rounded-full backdrop-blur-md transition-all shadow-lg ${
+                            isCover 
+                                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50 cursor-default' 
+                                : 'bg-black/40 text-white/50 border border-white/10 hover:text-white hover:border-white/50 active:scale-95'
+                        }`}
+                        title={isCover ? "当前封面" : "设为封面"}
+                    >
+                        <Star size={16} fill={isCover ? "currentColor" : "none"} />
+                    </button>
+                )}
+
                 {/* Mobile Sort Controls */}
                 {isMobile && (
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-6 z-50">

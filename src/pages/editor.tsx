@@ -160,7 +160,8 @@ export default function EditorPage() {
                     year: p.year,   // Load year
                     gap_after: p.gap_after,
                     aspectRatio: 'landscape', // Default, will update if we check dimensions
-                    blurhash: p.blurhash
+                    blurhash: p.blurhash,
+                    isCover: ex.cover_url && p.url === ex.cover_url // Identify cover
                 });
                 spacings[p.id] = p.gap_after;
             }
@@ -249,12 +250,16 @@ export default function EditorPage() {
     
     // Mobile: Auto-add to gallery
     if (isMobile) {
-        const galleryAdds = newItems.map(item => ({
-            ...item,
-            id: `${item.id}-${Date.now()}`,
-            sourceId: item.id
-        }));
-        setGalleryItems(prev => [...prev, ...galleryAdds]);
+        setGalleryItems(prev => {
+            const isFirstBatch = prev.length === 0;
+            const galleryAdds = newItems.map((item, index) => ({
+                ...item,
+                id: `${item.id}-${Date.now()}`,
+                sourceId: item.id,
+                isCover: isFirstBatch && index === 0
+            }));
+            return [...prev, ...galleryAdds];
+        });
         setToast({ visible: true, message: "已添加至展览" });
     } else if (newItems.length > 0) {
         setToast({ visible: true, message: "影像已留存" });
@@ -280,7 +285,17 @@ export default function EditorPage() {
     if (!item) return;
 
     // Remove from gallery
-    setGalleryItems(prev => prev.filter(i => i.id !== itemId));
+    setGalleryItems(prev => {
+        const newItems = prev.filter(i => i.id !== itemId);
+        
+        // Fallback Logic: If we removed the cover, set new first item as cover
+        const wasCover = prev.find(i => i.id === itemId)?.isCover;
+        if (wasCover && newItems.length > 0) {
+            newItems[0].isCover = true;
+        }
+        
+        return newItems;
+    });
 
     // Add back to pool (if it was an upload, maybe we want to keep it available?)
     setPoolItems(prev => {
@@ -317,6 +332,14 @@ export default function EditorPage() {
           }
           return newItems;
       });
+  };
+
+  // Set Cover Logic
+  const handleSetCover = (itemId: string) => {
+      setGalleryItems(prev => prev.map(item => ({
+          ...item,
+          isCover: item.id === itemId
+      })));
   };
 
   // Mobile: Handle adding from pool to gallery
@@ -441,7 +464,7 @@ export default function EditorPage() {
                 title: payload.title,
                 description: payload.description,
                 user_id: user?.id,
-                status: 'published',
+                status: 'draft', // Initial status is draft to prevent showing empty exhibitions
             })
             .select()
             .single();
@@ -459,69 +482,95 @@ export default function EditorPage() {
     let detectedFirstUrl = "";
     
     setUploadProgress({ current: 0, total: galleryItems.length });
-    const limit = pLimit(3); // Limit to 3 concurrent uploads
+    const limit = pLimit(2); // Limit to 2 concurrent uploads to be safe
 
     // Sort items by sort_order implicitly by map index, which matches how we display them
     const uploadPromises = galleryItems.map((item, i) => limit(async () => {
-        let publicUrl = item.src;
+        try {
+            let publicUrl = item.src;
 
-        // Check if it's a local file (new upload)
-        if (item.file) {
-            // Compress Image
-            let fileToUpload = item.file;
-            try {
-                const options = {
-                    maxSizeMB: 1, // Max 1MB
-                    maxWidthOrHeight: 1920, // Max width/height
-                    useWebWorker: true,
-                };
-                fileToUpload = await imageCompression(item.file, options);
-                console.log(`Compressed ${item.file.name}: ${item.file.size / 1024 / 1024}MB -> ${fileToUpload.size / 1024 / 1024}MB`);
-            } catch (error) {
-                console.error("Compression failed, using original file", error);
+            // Check if it's a local file (new upload)
+            if (item.file) {
+                // Compress Image
+                let fileToUpload = item.file;
+                try {
+                    const options = {
+                        maxSizeMB: 1.5, // Slightly increased to avoid over-compression issues
+                        maxWidthOrHeight: 2048, 
+                        useWebWorker: true,
+                        fileType: item.file.type // Explicitly pass file type
+                    };
+                    fileToUpload = await imageCompression(item.file, options);
+                    console.log(`Compressed ${item.file.name}: ${(item.file.size / 1024 / 1024).toFixed(2)}MB -> ${(fileToUpload.size / 1024 / 1024).toFixed(2)}MB`);
+                } catch (error) {
+                    console.error("Compression failed, using original file", error);
+                }
+
+                // Safety check for file name
+                const originalName = item.file.name || `image-${Date.now()}.jpg`;
+                const fileExt = originalName.split('.').pop() || 'jpg';
+                const fileName = `${targetExhibitionId}/${Date.now()}-${i}.${fileExt}`;
+                
+                // Retry logic for upload
+                let uploadError = null;
+                let retryCount = 0;
+                const maxRetries = 3;
+
+                while (retryCount < maxRetries) {
+                    const { error } = await supabase.storage
+                        .from('exhibitions')
+                        .upload(fileName, fileToUpload, {
+                            upsert: true
+                        });
+                    
+                    if (!error) {
+                        uploadError = null;
+                        break;
+                    }
+                    
+                    uploadError = error;
+                    console.warn(`Upload attempt ${retryCount + 1} failed for ${fileName}:`, error);
+                    retryCount++;
+                    // Wait 1s before retry
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                if (uploadError) {
+                    console.error(`Failed to upload photo ${i} after ${maxRetries} attempts:`, uploadError);
+                    // Critical failure for this photo
+                    return null; 
+                }
+
+                const { data } = supabase.storage
+                    .from('exhibitions')
+                    .getPublicUrl(fileName);
+                
+                // Add timestamp query param to bypass CDN cache
+                publicUrl = `${data.publicUrl}?t=${Date.now()}`;
             }
 
-            const fileExt = item.file.name.split('.').pop();
-            const fileName = `${targetExhibitionId}/${Date.now()}-${i}.${fileExt}`;
-            
-            // Remove cacheControl: '3600' to avoid caching issues with same-name files or generally
-            const { error: uploadError } = await supabase.storage
-                .from('exhibitions')
-                .upload(fileName, fileToUpload, {
-                    upsert: true
-                });
+            const itemToInsert = {
+                exhibition_id: targetExhibitionId,
+                url: publicUrl,
+                caption: item.caption || "",
+                title: item.title || "",
+                year: item.year || "",
+                gap_after: spacingData[item.id] || 200,
+                sort_order: i,
+                exif_data: item.exif || null, // Save EXIF data
+                blurhash: item.blurhash || null // Save BlurHash
+            };
 
-            if (uploadError) {
-                console.error(`Failed to upload photo ${i}:`, uploadError);
-                return null; // Skip this item on error
+            if (i === 0) {
+                detectedFirstUrl = publicUrl;
             }
 
-            const { data } = supabase.storage
-                .from('exhibitions')
-                .getPublicUrl(fileName);
-            
-            // Add timestamp query param to bypass CDN cache
-            publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+            setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
+            return itemToInsert;
+        } catch (err) {
+            console.error(`Unexpected error processing item ${i}:`, err as any);
+            return null;
         }
-
-        const itemToInsert = {
-            exhibition_id: targetExhibitionId,
-            url: publicUrl,
-            caption: item.caption || "",
-            title: item.title || "",
-            year: item.year || "",
-            gap_after: spacingData[item.id] || 200,
-            sort_order: i,
-            exif_data: item.exif || null, // Save EXIF data
-            blurhash: item.blurhash || null // Save BlurHash
-        };
-
-        if (i === 0) {
-            detectedFirstUrl = publicUrl;
-        }
-
-        setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
-        return itemToInsert;
     }));
 
     const results = await Promise.all(uploadPromises);
@@ -546,12 +595,39 @@ export default function EditorPage() {
         }
     }
 
-    // Step 3.5: Update Exhibition Cover with the first photo
-    if (firstPhotoUrl) {
+    // Step 3.5: Update Exhibition Cover
+    // Find the item marked as cover in current state
+    const coverItem = galleryItems.find(i => i.isCover);
+    let finalCoverUrl = "";
+
+    if (coverItem) {
+        // If it was an existing item (no file), its src is the URL.
+        if (!coverItem.file) {
+            finalCoverUrl = coverItem.src;
+        } else {
+            // It was a new upload. Find it in results.
+            const index = galleryItems.findIndex(i => i.id === coverItem.id);
+            if (index !== -1 && results[index]) {
+                finalCoverUrl = results[index].url;
+            }
+        }
+    }
+    
+    // Fallback if no cover set or cover item failed to upload
+    if (!finalCoverUrl) {
+         if (firstPhotoUrl) {
+             finalCoverUrl = firstPhotoUrl;
+         } else if (photoInserts.length > 0) {
+             finalCoverUrl = (photoInserts[0] as any).url;
+         }
+    }
+
+    if (finalCoverUrl) {
         const { error: coverError } = await supabase
             .from('exhibitions')
             .update({ 
-                cover_url: firstPhotoUrl,
+                cover_url: finalCoverUrl,
+                status: 'published' // Publish ONLY after cover/photos are ready
              })
             .eq('id', targetExhibitionId);
 
@@ -559,13 +635,8 @@ export default function EditorPage() {
              console.error("CRITICAL: Failed to update cover url", coverError);
         }
     } else {
-        if (photoInserts.length > 0) {
-             const fallbackUrl = (photoInserts[0] as any).url;
-             await supabase
-                .from('exhibitions')
-                .update({ cover_url: fallbackUrl })
-                .eq('id', targetExhibitionId);
-        }
+        // Just in case
+         console.warn("No cover url found to update");
     }
 
     console.log("Exhibition published successfully!");
@@ -668,12 +739,12 @@ export default function EditorPage() {
       onDragEnd={handleDragEnd}
     >
       <main 
-        className="h-screen w-screen bg-[#1a1a1a] flex flex-col overflow-hidden relative"
+        className="h-screen w-screen bg-[#050505] flex flex-col overflow-hidden relative"
         onContextMenu={(e) => e.preventDefault()}
       >
         {/* SVG Grid Pattern Background */}
       <div 
-          className="absolute inset-0 pointer-events-none opacity-10"
+          className="absolute inset-0 pointer-events-none opacity-[0.03]"
           style={{
               backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h40v40H0V0zm1 1h38v38H1V1z' fill='%23ffffff' fill-rule='evenodd'/%3E%3C/svg%3E")`
           }}
@@ -732,6 +803,7 @@ export default function EditorPage() {
              titleRef={titleInputRef}
              isMobile={isMobile}
              onMoveItem={handleMoveItem}
+             onSetCover={handleSetCover}
            />
       </div>
 

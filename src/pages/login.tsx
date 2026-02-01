@@ -128,7 +128,7 @@ export default function Login() {
                 type="password"
                 required
                 className="w-full bg-transparent border-b border-white/20 focus:border-white rounded-none px-2 py-3 text-center transition-colors outline-none placeholder:text-neutral-700 font-serif tracking-widest text-white"
-                placeholder="口令"
+                placeholder="密码"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               />

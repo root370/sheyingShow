@@ -382,7 +382,8 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       
       // Simply move targetX during scroll for responsiveness
       // But we will override it on snap
-      targetX.current -= delta * (isTrackpad ? 2.5 : 1.5);
+      // REDUCED SENSITIVITY: 2.5/1.5 -> 1.2/0.8
+      targetX.current -= delta * (isTrackpad ? 1.2 : 0.8);
       
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       
@@ -422,11 +423,12 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
         // Force Snap to the fresh DOM position
         snapToElement(bestIndex);
         
-      }, 150); // Debounce time
+        // INCREASED DEBOUNCE: 150ms -> 250ms to allow longer, smoother swipes before locking
+      }, 250); 
     };
 
     const container = containerRef.current;
-    if (container) {
+    if (container && !isMobile) {
       container.addEventListener('wheel', handleWheel, { passive: false });
     }
 
@@ -436,7 +438,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       }
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     };
-  }, [showIndex]);
+  }, [showIndex, isMobile]);
 
   const jumpToPhoto = (photoIndex: number) => {
     // photoIndex is 0-based index in photos array
@@ -470,7 +472,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   return (
     <div 
       ref={containerRef} 
-      className={`relative w-full h-screen bg-[#050505] ${isMobile ? 'overflow-y-scroll snap-y snap-mandatory' : 'overflow-hidden flex flex-col justify-center'}`}
+      className={`relative w-full h-screen bg-[#050505] ${isMobile ? 'overflow-y-scroll snap-y snap-mandatory scroll-smooth' : 'overflow-hidden flex flex-col justify-center'}`}
       onScroll={isMobile ? handleScroll : undefined}
     >
       {/* Atmosphere: Spotlight & Noise */}
@@ -573,8 +575,9 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                       setMobileInteractionMode('none');
                   }
                   if (index === photos.length - 1) {
-                      // Last Photo -> Back to Top
-                      containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                      // Last Photo -> Scroll to Guestbook
+                      const guestbookElement = contentRef.current?.children[index + 2];
+                      guestbookElement?.scrollIntoView({ behavior: 'smooth' });
                   } else {
                       // Next Photo
                       const nextElement = contentRef.current?.children[index + 2]; // +1 for Preface, +1 for Next
@@ -589,11 +592,11 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
 
         {/* Guestbook Slide (Final) */}
         <div className={`flex flex-col justify-center items-center relative p-8 ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
-            <div className="max-w-2xl w-full">
+            <div className="max-w-2xl w-full flex flex-col items-center">
                 <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">留言</h2>
                 
                 {/* Message Input */}
-                <form onSubmit={handleSendMessage} className="mb-12 relative">
+                <form onSubmit={handleSendMessage} className="mb-12 relative w-full">
                     <input 
                         type="text" 
                         value={newMessage}
@@ -620,7 +623,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                 </form>
 
                 {/* Messages Display */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar">
+                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
                     {guestbookEntries.map((entry) => (
                         <div key={entry.id} className="bg-white/5 p-4 rounded-sm border border-white/10 relative group hover:border-white/30 transition-colors">
                             <p className="font-['Caveat',_cursive] text-2xl text-gray-200 leading-relaxed">
@@ -642,6 +645,21 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                         </div>
                     )}
                 </div>
+
+                {/* Back to Top Button */}
+                {isMobile && (
+                    <button
+                        onClick={() => {
+                            containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="flex flex-col items-center gap-2 text-white/30 hover:text-white/80 transition-colors group animate-pulse"
+                    >
+                        <div className="p-3 border border-white/10 rounded-full group-hover:border-white/50 transition-colors">
+                             <ChevronsDown size={20} className="rotate-180" />
+                        </div>
+                        <span className="text-[10px] tracking-[0.2em] uppercase font-serif">回到顶部</span>
+                    </button>
+                )}
             </div>
         </div>
       </motion.div>
