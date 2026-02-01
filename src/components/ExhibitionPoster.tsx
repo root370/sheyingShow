@@ -135,7 +135,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
   };
 
   return (
-    <div className="group relative w-full flex flex-col gap-3 mb-4 md:mb-6 break-inside-avoid">
+    <div className="group relative w-full flex flex-col gap-2 mb-8 md:mb-12 break-inside-avoid">
         <Link href={`/exhibition/${exhibition.id}`} className="block w-full" prefetch={false}>
             {/* 1. Card Container */}
             <motion.div
@@ -180,7 +180,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
             </motion.div>
 
             {/* 2. Text Info (Below Card) */}
-            <div className="px-1 mt-2">
+            <div className="px-1 mt-1">
                  <div className="flex items-center justify-between">
                     <div className="flex items-center overflow-hidden">
                         {/* Hidden Icon that slides in */}
@@ -191,7 +191,7 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
                         </span>
                         
                         {/* Title that slides right */}
-                        <h2 className="font-serif text-2xl text-white group-hover:text-accent transition-colors duration-300 transform group-hover:translate-x-2 transition-transform ease-out line-clamp-1 break-all">
+                        <h2 className="font-serif text-sm md:text-2xl text-white group-hover:text-accent transition-colors duration-300 transform group-hover:translate-x-2 transition-transform ease-out line-clamp-1 break-all">
                             {exhibition.title}
                         </h2>
                     </div>
