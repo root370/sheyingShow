@@ -23,6 +23,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Check if username exists to prevent "Database error creating new user"
     if (username) {
+        if (username.length < 3) {
+            return res.status(400).json({ error: 'Username must be at least 3 characters long' });
+        }
+
         const { data: existingUser, error: checkError } = await supabaseAdmin
             .from('profiles')
             .select('id')

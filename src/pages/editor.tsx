@@ -43,6 +43,7 @@ import { ArrowLeft } from 'lucide-react';
 import exifr from 'exifr';
 import imageCompression from 'browser-image-compression';
 import { useExhibitionCache } from '@/context/ExhibitionContext';
+import { pLimit } from '@/utils/pLimit';
 
 export default function EditorPage() {
   const router = useRouter();
@@ -58,6 +59,7 @@ export default function EditorPage() {
   const [showPledge, setShowPledge] = useState(false);
   const [toast, setToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
   const [isMobile, setIsMobile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
 
   React.useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -456,8 +458,11 @@ export default function EditorPage() {
     // Capture the first URL directly from the loop to be safe
     let detectedFirstUrl = "";
     
+    setUploadProgress({ current: 0, total: galleryItems.length });
+    const limit = pLimit(3); // Limit to 3 concurrent uploads
+
     // Sort items by sort_order implicitly by map index, which matches how we display them
-    const uploadPromises = galleryItems.map(async (item, i) => {
+    const uploadPromises = galleryItems.map((item, i) => limit(async () => {
         let publicUrl = item.src;
 
         // Check if it's a local file (new upload)
@@ -515,8 +520,9 @@ export default function EditorPage() {
             detectedFirstUrl = publicUrl;
         }
 
+        setUploadProgress(prev => ({ ...prev, current: prev.current + 1 }));
         return itemToInsert;
-    });
+    }));
 
     const results = await Promise.all(uploadPromises);
     const photoInserts = results.filter(item => item !== null);
@@ -709,7 +715,7 @@ export default function EditorPage() {
                 />
             </div>
             <div className="absolute mt-48 font-serif text-white tracking-[0.3em] animate-pulse">
-                正在显影...
+                正在显影... {uploadProgress.total > 0 && `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`}
             </div>
         </div>
       )}

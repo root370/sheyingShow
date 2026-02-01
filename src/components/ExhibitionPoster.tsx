@@ -135,70 +135,52 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
   };
 
   return (
-    <div className="group relative w-full flex flex-col gap-6">
+    <div className="group relative w-full flex flex-col gap-3 mb-4 md:mb-6 break-inside-avoid">
         <Link href={`/exhibition/${exhibition.id}`} className="block w-full" prefetch={false}>
-            {/* 1. Card Container - REMOVED FRAME STYLES */}
+            {/* 1. Card Container */}
             <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full aspect-[3/4] rounded-sm overflow-hidden group bg-neutral-900 border border-white/10"
+                className="relative w-full rounded-lg overflow-hidden group bg-neutral-900 border border-white/10 md:hover:shadow-xl md:hover:scale-[1.02] transition-all duration-500 ease-out"
             >
-                {/* Floating Animation Wrapper - REMOVED PADDING */}
-                <motion.div
-                    className="w-full h-full"
-                    animate={{ y: [0, -5, 0] }}
-                    transition={{ 
-                        duration: 6, 
-                        repeat: Infinity, 
-                        ease: "easeInOut",
-                        delay: index * 1.5 
-                    }}
-                >
-                    {/* The Image - Cinematic Processing */}
-                    <div className="relative w-full h-full overflow-hidden">
-                         <img
-                            src={`${exhibition.cover}${exhibition.cover?.includes('?') ? '&' : '?'}v=${new Date((exhibition as any).created_at).getTime()}`}
-                            alt={exhibition.title}
-                            className="w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-105 group-hover:grayscale-0 grayscale-[20%] brightness-90 group-hover:brightness-100"
-                        />
-                        
-                        {/* Debug Info */}
-                        {/* <div className="absolute top-0 left-0 bg-red-500 text-white text-[8px] z-50 p-1">
-                            {exhibition.cover?.substring(0, 30)}...
-                        </div> */}
-                        
-                        {/* 1. Cinematic Gradient Overlay (Bottom Up) */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
-                        
-                        {/* 2. Noise Texture Overlay for Film Look */}
-                        <div className="absolute inset-0 opacity-[0.15] pointer-events-none mix-blend-overlay" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E\")" }} />
+                {/* Image Container - Height Auto, No Cropping */}
+                <div className="relative w-full h-auto min-h-[100px] bg-neutral-900">
+                        <img
+                        src={`${exhibition.cover}${exhibition.cover?.includes('?') ? '&' : '?'}v=${new Date((exhibition as any).created_at).getTime()}`}
+                        alt={exhibition.title}
+                        className="w-full h-auto block object-contain md:grayscale-[20%] md:brightness-90 md:group-hover:grayscale-0 md:group-hover:brightness-100 transition-all duration-700 ease-out"
+                        loading="lazy"
+                    />
+                    
+                    {/* Cinematic Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 md:group-hover:opacity-40 transition-opacity duration-500" />
+                    
+                    {/* Noise Texture */}
+                    <div className="absolute inset-0 opacity-[0.15] pointer-events-none mix-blend-overlay" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E\")" }} />
 
-                        {/* 3. Subtle Inner Border/Glow */}
-                        <div className="absolute inset-0 border border-white/5 pointer-events-none" />
-                    </div>
-                </motion.div>
+                    {/* Inner Border */}
+                    <div className="absolute inset-0 border border-white/5 pointer-events-none rounded-lg" />
+                </div>
 
-                {/* Collect Button (Top Right of Card) */}
+                {/* Collect Button (Top Right) */}
                 {showAuthor && (
                     <button
                         onClick={toggleCollect}
                         aria-label={isCollected ? "取消收藏" : "加入收藏"}
-                        className={`absolute top-2 right-2 md:top-6 md:right-6 z-20 p-3 rounded-full backdrop-blur-md transition-all duration-300 ${
+                        className={`absolute top-2 right-2 z-20 p-2 rounded-full backdrop-blur-md transition-all duration-300 ${
                             isCollected 
                             ? 'bg-accent text-black shadow-[0_0_15px_rgba(229,208,172,0.5)]' 
                             : 'bg-black/20 text-white/50 hover:bg-white hover:text-black'
                         }`}
                     >
-                        <Bookmark size={16} fill={isCollected ? "currentColor" : "none"} />
+                        <Bookmark size={14} fill={isCollected ? "currentColor" : "none"} />
                     </button>
                 )}
-
-                {/* Owner Actions (Edit / Delete) - REMOVED from Image area */}
             </motion.div>
 
             {/* 2. Text Info (Below Card) */}
-            <div className="px-2 mt-2">
+            <div className="px-1 mt-2">
                  <div className="flex items-center justify-between">
                     <div className="flex items-center overflow-hidden">
                         {/* Hidden Icon that slides in */}

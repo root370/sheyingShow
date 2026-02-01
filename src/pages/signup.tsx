@@ -92,8 +92,9 @@ export default function SignUp() {
               <input
                 type="text"
                 required
+                minLength={3}
                 className="w-full bg-neutral-900 border border-neutral-800 focus:border-neutral-600 rounded-none px-4 py-3 text-sm transition-colors outline-none"
-                placeholder="你的艺术化名"
+                placeholder="你的艺术化名 (至少3个字符)"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               />

@@ -517,7 +517,7 @@ export default function Lobby({ mode }: LobbyProps) {
                                     )}
                                  </div>
                             ) : (
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-[15px] md:gap-x-8 md:gap-y-16">
+                                <div className="columns-2 md:columns-3 lg:columns-4 gap-4 md:gap-6">
                                     {exhibitions.map((exhibition, index) => (
                                         <ExhibitionPoster 
                                             key={exhibition.id}  
