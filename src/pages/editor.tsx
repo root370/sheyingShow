@@ -608,7 +608,7 @@ export default function EditorPage() {
             // It was a new upload. Find it in results.
             const index = galleryItems.findIndex(i => i.id === coverItem.id);
             if (index !== -1 && results[index]) {
-                finalCoverUrl = results[index].url;
+                finalCoverUrl = (results[index] as any).url;
             }
         }
     }
