@@ -8,7 +8,166 @@ interface TargetedApologyModalProps {
   currentUser?: { username: string };
 }
 
-const APOLOGY_MESSAGES: Record<string, { storageKey: string; content: React.ReactNode }> = {
+const APOLOGY_MESSAGES: Record<string, { storageKey: string; content: React.ReactNode; buttonText?: string }> = {
+  'mjfans': {
+    storageKey: 'latent_welcome_mjfans_v1',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 MJFANS：关于那座温暖的岛</h4>
+        <p className="mb-4">嘿，MJFANS。</p>
+        <p className="mb-4">
+          很高兴能再次在 Latent 的暗房里见到你。
+        </p>
+        <p className="mb-4">
+          刚刚在整理影像时，看到了你上传的新作品。不仅仅是照片，那个<strong className="text-white font-medium">‘岛名’</strong>深深地触动了我们。那个名字听起来真温暖，像是在这浩瀚的数字海洋里，特意留出的一处避风港。
+        </p>
+        <p className="mb-4">
+          感谢你愿意把这份温度带回 Latent。 这里的显影液已经备好，期待你镜头下更多的故事。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '进入暗房'
+  },
+  'vvv': {
+    storageKey: 'latent_welcome_vvv_pro',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 VVV：关于那些精准的捕捉</h4>
+        <p className="mb-4">你好，VVV。</p>
+        <p className="mb-4">
+          很高兴再次在暗房见到你。
+        </p>
+        <p className="mb-4">
+          浏览你的作品是一种享受。无论是对光影的驾驭，还是构图时那份克制的取舍，都能看出镜头背后那双老练且敏锐的眼睛。你的出现，无形中拉高了这里的‘显影’标准。
+        </p>
+        <p className="mb-4">
+          好的作品不该只有沉默的注视。我们真诚地希望，你的每一次快门在这里都能听到回响，也能收获更多懂行者的共鸣与反馈。
+        </p>
+        <p className="mb-4">
+          请继续用你的视角，定义这里的影像。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '进入暗房'
+  },
+  '徐安宇': {
+    storageKey: 'latent_welcome_xuanyu_v1',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 徐安宇：岁月赠予的底片</h4>
+        <p className="mb-4">你好，徐安宇。</p>
+        <p className="mb-4">
+          看到暗房里涌入的这些新影像，我们既惊喜又感动。
+        </p>
+        <p className="mb-4">
+          首先，想郑重地感谢你的耐心。谢谢你包容尚不完美的 Latent，并愿意将如此厚重的记忆交付给我们。
+        </p>
+        <p className="mb-4">
+          透过你的镜头，我们仿佛看见了那些闪闪发亮的切片——那是一段非常美好、丰盛且松弛的过往。这些照片证明了你曾如此热烈地生活过。
+        </p>
+        <p className="mb-4">
+          我们衷心祝愿，未来的你，能拥有比过往更加辽阔的自由。
+        </p>
+        <p className="mb-4">
+          暗房的红灯为你长亮，期待在这里看到你更多的生活印记。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '继续显影'
+  },
+  '第二支羽毛': {
+    storageKey: 'latent_welcome_feather_v1',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 第二支羽毛：落在暗房的轻盈</h4>
+        <p className="mb-4">你好，第二支羽毛。</p>
+        <p className="mb-4">
+          很高兴在 Latent 见到你。首先，想郑重地对你说声谢谢——谢谢你在这个小小的暗房还在搭建时，就给予了我们如此多的<strong className="text-white font-medium">耐心与包容</strong>。
+        </p>
+        <p className="mb-4">
+          羽毛象征着温度与轻盈，我们非常期待能在这里看到更多出自你手的、带有温度的影像，让这里不再冰冷。
+        </p>
+        <p className="mb-4">
+          同时，如果你在这里邂逅了喜欢的作品，请不要吝啬你的言语。<strong className="text-white font-medium">哪怕只是短短一句评论，也是一种美好的共鸣。</strong>
+        </p>
+        <p className="mb-4">
+          愿你的快门，常有回响。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '留下印记'
+  },
+  '阿冬奶思': {
+    storageKey: 'latent_welcome_adong_v1',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 阿冬奶思：冬日里的暖光</h4>
+        <p className="mb-4">你好，阿冬奶思。</p>
+        <p className="mb-4">
+          欢迎回到 Latent。特别感谢你一直以来对我们的关注，尤其是对产品迭代过程中的那份<strong className="text-white font-medium">理解与耐心</strong>，这对我们弥足珍贵。
+        </p>
+        <p className="mb-4">
+          你的名字让人联想到冬日里温暖美好的事物。我们真诚地希望，你能将更多这样<strong className="text-white font-medium">‘有温度’</strong>的生活瞬间上传到这里，点亮这间暗房。
+        </p>
+        <p className="mb-4">
+          此外，当看到触动你的照片时，不妨<strong className="text-white font-medium">多留下一些评论</strong>。你的每一次互动，对于创作者来说，都是一次温暖的显影。
+        </p>
+        <p className="mb-4">
+          期待看到你的更多作品与声音。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '分享温暖'
+  },
+  'cuckoo': {
+    storageKey: 'latent_welcome_cuckoo_v1',
+    content: (
+      <>
+        <h4 className="font-serif text-xl mb-6">致 CUCKOO：海面之下的涌动</h4>
+        <p className="mb-4">你好，CUCKOO。</p>
+        <p className="mb-4">
+          欢迎回到 Latent。
+        </p>
+        <p className="mb-4">
+          首先必须告诉你，你上传的那幅<strong className="text-white font-medium">《海幕》在我们的屏幕上显影时，那种深邃与质感真的惊艳了我们。感谢你将这样高水准的作品留在这里，也更感谢你在这个阶段对 Latent 的包容与耐心</strong>。
+        </p>
+        <p className="mb-4">
+          像你这样拥有敏锐捕捉力的创作者，眼光往往是独到的。
+        </p>
+        <p className="mb-4">
+          所以，我们非常希望当你在这里浏览时，如果遇见了打动你的作品，请不要吝啬你的评论。无论是技术上的探讨，还是直觉上的喜欢，你的声音对其他创作者来说，都将是极其珍贵的反馈。
+        </p>
+        <p className="mb-4">
+          期待你的下一次快门，也期待你在评论区的身影。
+        </p>
+        <p className="mt-8 text-right">
+          祝好，<br />
+          <span className="font-serif italic text-lg">Latent Space 主理人</span>
+        </p>
+      </>
+    ),
+    buttonText: '去发现与交流'
+  },
   'dao': {
     storageKey: 'latent_apology_seen_dao',
     content: (
@@ -119,7 +278,7 @@ const APOLOGY_MESSAGES: Record<string, { storageKey: string; content: React.Reac
 
 export default function TargetedApologyModal({ currentUser }: TargetedApologyModalProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [message, setMessage] = useState<{ storageKey: string; content: React.ReactNode } | null>(null);
+  const [message, setMessage] = useState<{ storageKey: string; content: React.ReactNode; buttonText?: string } | null>(null);
 
   useEffect(() => {
     if (!currentUser?.username) return;
@@ -209,7 +368,7 @@ export default function TargetedApologyModal({ currentUser }: TargetedApologyMod
                 onClick={handleClose}
                 className="px-8 py-3 bg-white text-black text-xs font-bold tracking-[0.2em] uppercase hover:bg-gray-200 transition-colors"
               >
-                Received
+                {message.buttonText || 'Received'}
               </button>
             </div>
           </motion.div>

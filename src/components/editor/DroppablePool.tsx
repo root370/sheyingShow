@@ -61,10 +61,22 @@ export function DroppablePool({ items, onUpload, onBatchAdd }: DroppablePoolProp
         {/* Ghost Frame (Add Button) */}
         <div 
             onClick={() => fileInputRef.current?.click()}
-            className="group w-32 aspect-[3/4] flex flex-col items-center justify-center border-[0.5px] border-dashed border-white/20 bg-white/5 cursor-pointer active:bg-white/10 active:border-white/50 transition-all duration-300"
+            className="group relative w-32 aspect-[3/4] flex flex-col items-center justify-center cursor-pointer transition-all duration-500"
         >
-             <Plus strokeWidth={0.5} size={24} className="mb-2 text-white/40 group-active:text-white/70 transition-colors" />
-             <span className="text-[10px] font-sans tracking-[0.25em] text-white/40 uppercase group-active:text-white/70 transition-colors">INSERT FILM</span>
+             {/* Subtle Glass Background */}
+             <div className="absolute inset-0 bg-white/[0.02] backdrop-blur-[1px] border border-white/10 transition-all duration-500 group-hover:border-white/20 group-active:bg-white/5" />
+             
+             {/* Content */}
+             <div className="relative flex flex-col items-center z-10 space-y-3">
+                <Plus strokeWidth={0.5} size={28} className="text-white/30 group-hover:text-white/60 transition-colors duration-500" />
+                <span className="text-[9px] font-serif tracking-[0.3em] text-white/30 uppercase group-hover:text-white/60 transition-colors duration-500" >
+                    添加底片
+                </span>
+             </div>
+             
+             {/* Corner Accents (Viewfinder feel) */}
+             <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-white/20 transition-all duration-500 group-hover:w-full group-hover:h-full group-hover:border-white/5 opacity-0 group-hover:opacity-100" />
+             <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-white/20 transition-all duration-500 group-hover:w-full group-hover:h-full group-hover:border-white/5 opacity-0 group-hover:opacity-100" />
         </div>
     </div>
   );

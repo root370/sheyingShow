@@ -940,7 +940,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                 <img
                     src={src}
                     alt={alt}
-                    className="w-full h-full object-cover pointer-events-none"
+                    className={`w-full h-full pointer-events-none ${objectFit === 'contain' ? 'object-contain' : 'object-cover'}`}
                     style={{
                         filter: isDeveloped || isHolding 
                             ? 'grayscale(0%) brightness(100%) blur(0px)'
@@ -1581,9 +1581,10 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
         style={{
           boxShadow: '0 4px 8px -2px rgba(0, 0, 0, 0.5), 0 15px 30px -5px rgba(0, 0, 0, 0.4), 0 35px 70px -10px rgba(0, 0, 0, 0.3)',
           // Consistent height constraint logic
-          height: '65vh', 
+          height: isMobile ? 'auto' : '65vh', 
           width: 'auto',
-          minWidth: aspectRatio === 'portrait' ? '30vh' : '50vh',
+          minWidth: !isMobile ? (aspectRatio === 'portrait' ? '30vh' : '50vh') : '100%',
+          aspectRatio: isMobile ? 'auto' : undefined
         }}
       >
         {/* Noise Texture Overlay */}
@@ -1672,8 +1673,8 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                     ? (isInspecting ? 'brightness(0.9)' : 'grayscale(0%) brightness(100%) blur(0px) contrast(100%)')
                     : 'grayscale(100%) brightness(20%) blur(10px) contrast(120%)',
                 transition: 'filter 2s ease-in-out',
-                height: '100%',
-                width: 'auto'
+                height: isMobile ? 'auto' : '100%',
+                width: isMobile ? '100%' : 'auto'
               }}
             />
              {/* Inner Shadow Overlay - Beveled Mat Effect */}

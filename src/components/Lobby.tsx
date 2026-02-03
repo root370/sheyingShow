@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useExhibitionCache } from '@/context/ExhibitionContext';
 import TargetedApologyModal from '@/components/TargetedApologyModal';
 import ResonanceLetter from '@/components/ResonanceLetter';
+import GradientText from '@/components/GradientText/GradientText';
 
 interface LobbyProps {
   mode: 'dashboard' | 'explore';
@@ -330,7 +331,16 @@ export default function Lobby({ mode }: LobbyProps) {
              </div>
              {/* Desktop Logo */}
              <div className="hidden md:block">
-                 <h1 className="font-serif text-3xl font-bold tracking-[0.3em] uppercase text-white leading-none">L A T E N T</h1>
+                 <h1 className="leading-none">
+                     <GradientText
+                        colors={["#E5D0AC", "#FFFFFF", "#E5D0AC"]}
+                        animationSpeed={6}
+                        showBorder={false}
+                        className="font-serif text-3xl font-bold tracking-[0.3em] uppercase"
+                    >
+                        L A T E N T
+                    </GradientText>
+                 </h1>
              </div>
              
              <span className="text-[8px] tracking-[0.3em] font-sans font-medium opacity-70 uppercase mt-2 md:mt-1 text-center md:text-left">

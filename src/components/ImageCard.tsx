@@ -6,7 +6,7 @@ interface ImageCardProps {
   src: string;
   alt: string;
   blurhash?: string;
-  aspectRatio?: 'landscape' | 'portrait' | 'square';
+  aspectRatio?: 'landscape' | 'portrait' | 'square' | 'auto';
   className?: string;
   style?: React.CSSProperties;
   loading?: 'lazy' | 'eager';
@@ -32,17 +32,29 @@ export default function ImageCard({
   onClick,
 }: ImageCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [naturalRatio, setNaturalRatio] = useState<string | undefined>(undefined);
 
   // If src changes, reset loaded state
   useEffect(() => {
     setIsLoaded(false);
+    setNaturalRatio(undefined);
   }, [src]);
+
+  // Handle image load to detect natural aspect ratio if we want to support 'auto'
+  // But currently we enforce aspect ratio via prop.
+  // The 'auto' support can be tricky with Masonry or rigid layouts.
+  // Let's stick to prop, but if prop is missing, we could try to be smart.
+  
+  const isAuto = aspectRatio === 'auto';
+  const computedAspectRatio = isAuto ? undefined : (ASPECT_RATIOS[aspectRatio as keyof typeof ASPECT_RATIOS] || ASPECT_RATIOS.landscape);
 
   return (
     <div
       className={`relative overflow-hidden ${className}`}
       style={{
-        aspectRatio: ASPECT_RATIOS[aspectRatio],
+        // If aspectRatio is 'auto', we rely on the image itself, but here we force it.
+        // If the prop passed is valid key, use it. Otherwise default to landscape.
+        aspectRatio: computedAspectRatio,
         ...style,
       }}
       onClick={onClick}
@@ -83,11 +95,12 @@ export default function ImageCard({
             // Use absolute positioning to overlap correctly if needed, 
             // but for simple stacking, we might want absolute for one or both.
             // Since we use aspect-ratio on parent, img should just fill it.
-            position: 'absolute',
+            // FIX: If auto mode, we want the image to dictate height, so use relative positioning.
+            position: isAuto ? 'relative' : 'absolute',
             top: 0,
             left: 0,
             width: '100%',
-            height: '100%'
+            height: isAuto ? 'auto' : '100%'
         }}
       />
     </div>
