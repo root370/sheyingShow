@@ -1664,6 +1664,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
               aspectRatio={aspectRatio}
               loading={priority ? "eager" : "lazy"}
               draggable={false}
+              isMobile={isMobile}
               className="w-auto h-auto block object-contain select-none"
               style={{
                 maxHeight: isMobile ? 'none' : (contentMaxHeight || '100%'),

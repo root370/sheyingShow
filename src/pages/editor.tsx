@@ -37,6 +37,7 @@ import { EditableTextHandle } from '@/components/editor/EditableText';
 import { Toast } from '@/components/Toast';
 
 import { supabase } from '@/lib/supabase';
+import { getCOSInstance, getCOSUrl } from '@/lib/cos';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -174,95 +175,116 @@ export default function EditorPage() {
   }, [exhibitionId]);
 
   const handleUpload = async (files: FileList) => {
-    const newItems = await Promise.all(Array.from(files).map(async (file) => {
-      let exifData = null;
-      let aspectRatio = 'landscape';
-      let blurhash = null;
-      
-      try {
-        // 1. Parse EXIF
-        const output = await exifr.parse(file, {
-            tiff: true,
-            exif: true,
-            pick: ['ISO', 'FNumber', 'Model', 'ExposureTime', 'FocalLength', 'MeteringMode'] 
-        });
-        if (output) {
-            exifData = {
-                ISO: output.ISO,
-                FNumber: output.FNumber,
-                Model: output.Model,
-                ExposureTime: output.ExposureTime,
-                FocalLength: output.FocalLength,
-                MeteringMode: output.MeteringMode
-            };
+    // console.log("handleUpload called with", files.length, "files");
+    try {
+      const newItems = await Promise.all(Array.from(files).map(async (file) => {
+        // console.log("Processing file:", file.name);
+        let exifData = null;
+        let aspectRatio = 'landscape';
+        let blurhash = null;
+        
+        try {
+          // 1. Parse EXIF
+          // console.log("Parsing EXIF for:", file.name);
+          const output = await exifr.parse(file, {
+              tiff: true,
+              exif: true,
+              pick: ['ISO', 'FNumber', 'Model', 'ExposureTime', 'FocalLength', 'MeteringMode'] 
+          });
+          if (output) {
+              exifData = {
+                  ISO: output.ISO,
+                  FNumber: output.FNumber,
+                  Model: output.Model,
+                  ExposureTime: output.ExposureTime,
+                  FocalLength: output.FocalLength,
+                  MeteringMode: output.MeteringMode
+              };
+          }
+          // console.log("EXIF parsed:", exifData);
+
+          // 2. Determine Aspect Ratio & Generate BlurHash
+          // console.log("Generating BlurHash and Aspect Ratio for:", file.name);
+          await new Promise((resolve) => {
+               const img = new Image();
+               img.onload = () => {
+                   // Aspect Ratio
+                   if (img.height > img.width) {
+                       aspectRatio = 'portrait';
+                   } else if (img.height === img.width) {
+                       aspectRatio = 'square';
+                   }
+                   
+                   // BlurHash
+                   try {
+                       const canvas = document.createElement("canvas");
+                       // Scale down for performance and blurhash requirements
+                       const w = 32;
+                       const h = Math.round(32 * (img.height / img.width));
+                       canvas.width = w;
+                       canvas.height = h;
+                       const ctx = canvas.getContext("2d");
+                       if (ctx) {
+                           ctx.drawImage(img, 0, 0, w, h);
+                           const imageData = ctx.getImageData(0, 0, w, h);
+                           blurhash = encode(imageData.data, w, h, 4, 3);
+                       }
+                   } catch (e) {
+                       console.warn("Blurhash generation failed", e);
+                   }
+
+                   resolve(null);
+               };
+               img.onerror = (e) => {
+                   console.error("Image load error:", e);
+                   resolve(null); 
+               };
+               img.src = URL.createObjectURL(file);
+          });
+          // console.log("BlurHash and Aspect Ratio generated");
+
+        } catch (e) {
+          console.warn("Failed to parse metadata", e);
         }
 
-        // 2. Determine Aspect Ratio & Generate BlurHash
-        await new Promise((resolve) => {
-             const img = new Image();
-             img.onload = () => {
-                 // Aspect Ratio
-                 if (img.height > img.width) {
-                     aspectRatio = 'portrait';
-                 } else if (img.height === img.width) {
-                     aspectRatio = 'square';
-                 }
-                 
-                 // BlurHash
-                 try {
-                     const canvas = document.createElement("canvas");
-                     // Scale down for performance and blurhash requirements
-                     const w = 32;
-                     const h = Math.round(32 * (img.height / img.width));
-                     canvas.width = w;
-                     canvas.height = h;
-                     const ctx = canvas.getContext("2d");
-                     if (ctx) {
-                         ctx.drawImage(img, 0, 0, w, h);
-                         const imageData = ctx.getImageData(0, 0, w, h);
-                         blurhash = encode(imageData.data, w, h, 4, 3);
-                     }
-                 } catch (e) {
-                     console.warn("Blurhash generation failed", e);
-                 }
-
-                 resolve(null);
-             };
-             img.onerror = () => resolve(null); // Fallback
-             img.src = URL.createObjectURL(file);
-        });
-
-      } catch (e) {
-        console.warn("Failed to parse metadata", e);
+        const item = {
+          id: `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          src: URL.createObjectURL(file), // Create local preview URL
+          alt: file.name,
+          file: file, // Store the File object for later upload
+          exif: exifData,
+          aspectRatio: aspectRatio,
+          blurhash: blurhash
+        };
+        // console.log("Created item:", item);
+        return item;
+      }));
+      
+      // console.log("All items processed. Adding to pool/gallery...");
+      setPoolItems((prev) => {
+          // console.log("Updating pool items. Previous count:", prev.length);
+          return [...prev, ...newItems];
+      });
+      
+      // Mobile: Auto-add to gallery
+      if (isMobile) {
+          // console.log("Mobile mode detected. Adding to gallery.");
+          setGalleryItems(prev => {
+              const isFirstBatch = prev.length === 0;
+              const galleryAdds = newItems.map((item, index) => ({
+                  ...item,
+                  id: `${item.id}-${Date.now()}`,
+                  sourceId: item.id,
+                  isCover: isFirstBatch && index === 0
+              }));
+              return [...prev, ...galleryAdds];
+          });
+          setToast({ visible: true, message: "已添加至展览" });
+      } else if (newItems.length > 0) {
+          setToast({ visible: true, message: "影像已留存" });
       }
-
-      return {
-        id: `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        src: URL.createObjectURL(file), // Create local preview URL
-        alt: file.name,
-        file: file, // Store the File object for later upload
-        exif: exifData,
-        aspectRatio: aspectRatio,
-        blurhash: blurhash
-      };
-    }));
-    setPoolItems((prev) => [...prev, ...newItems]);
-    
-    // Mobile: Auto-add to gallery
-    if (isMobile) {
-        setGalleryItems(prev => {
-            const isFirstBatch = prev.length === 0;
-            const galleryAdds = newItems.map((item, index) => ({
-                ...item,
-                id: `${item.id}-${Date.now()}`,
-                sourceId: item.id,
-                isCover: isFirstBatch && index === 0
-            }));
-            return [...prev, ...galleryAdds];
-        });
-        setToast({ visible: true, message: "已添加至展览" });
-    } else if (newItems.length > 0) {
-        setToast({ visible: true, message: "影像已留存" });
+    } catch (error) {
+        console.error("Error in handleUpload:", error);
     }
   };
 
@@ -382,6 +404,7 @@ export default function EditorPage() {
   const isPublishingRef = React.useRef(false);
 
   const handlePublishClick = async () => {
+    console.log("handlePublishClick called");
     // 0. Empty Check
     if (galleryItems.length === 0) {
         setToast({ visible: true, message: "请至少选择一张照片" });
@@ -484,6 +507,9 @@ export default function EditorPage() {
     setUploadProgress({ current: 0, total: galleryItems.length });
     const limit = pLimit(2); // Limit to 2 concurrent uploads to be safe
 
+    // Initialize COS
+    const cos = getCOSInstance();
+
     // Sort items by sort_order implicitly by map index, which matches how we display them
     const uploadPromises = galleryItems.map((item, i) => limit(async () => {
         try {
@@ -517,22 +543,33 @@ export default function EditorPage() {
                 const maxRetries = 3;
 
                 while (retryCount < maxRetries) {
-                    const { error } = await supabase.storage
-                        .from('exhibitions')
-                        .upload(fileName, fileToUpload, {
-                            upsert: true
+                    try {
+                        console.log(`Starting upload for ${fileName}... Attempt ${retryCount + 1}`);
+                        await new Promise((resolve, reject) => {
+                            cos.putObject({
+                                Bucket: process.env.NEXT_PUBLIC_TENCENT_BUCKET || '', 
+                                Region: process.env.NEXT_PUBLIC_TENCENT_REGION || '',
+                                Key: fileName,
+                                Body: fileToUpload,
+                            }, function(err, data) {
+                                if (err) {
+                                    console.error("COS Upload Error Callback:", err);
+                                    reject(err);
+                                } else {
+                                    console.log("COS Upload Success:", data);
+                                    resolve(data);
+                                }
+                            });
                         });
-                    
-                    if (!error) {
                         uploadError = null;
                         break;
+                    } catch (err) {
+                        uploadError = err;
+                        console.warn(`Upload attempt ${retryCount + 1} failed for ${fileName}:`, err);
+                        retryCount++;
+                        // Wait 1s before retry
+                        await new Promise(r => setTimeout(r, 1000));
                     }
-                    
-                    uploadError = error;
-                    console.warn(`Upload attempt ${retryCount + 1} failed for ${fileName}:`, error);
-                    retryCount++;
-                    // Wait 1s before retry
-                    await new Promise(r => setTimeout(r, 1000));
                 }
 
                 if (uploadError) {
@@ -541,12 +578,11 @@ export default function EditorPage() {
                     return null; 
                 }
 
-                const { data } = supabase.storage
-                    .from('exhibitions')
-                    .getPublicUrl(fileName);
-                
-                // Add timestamp query param to bypass CDN cache
-                publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+                // Get Public URL (CDN or COS)
+                publicUrl = getCOSUrl(fileName);
+                // Append timestamp to avoid local cache issues immediately after upload (optional)
+                publicUrl = `${publicUrl}?t=${Date.now()}`;
+                console.log("Generated Public URL:", publicUrl);
             }
 
             const itemToInsert = {

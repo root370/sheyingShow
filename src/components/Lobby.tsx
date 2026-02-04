@@ -56,13 +56,15 @@ export default function Lobby({ mode }: LobbyProps) {
       const ids = letterComments.map(c => c.id);
       if (ids.length === 0) return;
 
+      // Optimistic update: clear local comments immediately so it doesn't reappear
+      setLetterComments([]); 
+
       try {
+          // Use RPC function to bypass RLS for updating guestbook entries
           const { error } = await supabase
-            .from('guestbook_entries')
-            .update({ is_read: true })
-            .in('id', ids);
+            .rpc('mark_guestbook_as_read', { entry_ids: ids });
           
-          if (error) console.error("Failed to mark comments as read", error);
+          if (error) console.error("Failed to mark comments as read via RPC", error);
       } catch (err) {
           console.error("Error updating read status", err);
       }
@@ -153,8 +155,12 @@ export default function Lobby({ mode }: LobbyProps) {
     async function fetchData() {
       // Check if we have fresh cache (e.g. less than 1 minute old)
       // We restore cache usage now that we have proper sync on delete
-      const currentCache = mode === 'dashboard' ? dashboardCache : exploreCache;
+      // const currentCache = mode === 'dashboard' ? dashboardCache : exploreCache;
       // const currentCache = null; // Force refresh disabled, using smart cache
+      // FORCE CLEAR CACHE:
+      const currentCache = null;
+      if (mode === 'dashboard' && dashboardCache) setDashboardCache(null);
+      if (mode === 'explore' && exploreCache) setExploreCache(null);
       
       if (currentCache) {
           setExhibitions(currentCache.exhibitions);

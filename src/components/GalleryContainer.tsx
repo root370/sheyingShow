@@ -568,7 +568,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               isOwner={isAuthor}
               onDevelop={handlePhotoDevelop}
               onExpand={() => setFullScreenPhoto(photo)}
-              priority={index < 4}
+              priority={index < 2}
               isActive={activeIndex === index + 1}
               onNext={() => {
                   if (isMobile && !isAuthor) {

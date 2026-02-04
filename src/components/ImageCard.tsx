@@ -12,6 +12,7 @@ interface ImageCardProps {
   loading?: 'lazy' | 'eager';
   draggable?: boolean;
   onClick?: () => void;
+  isMobile?: boolean;
 }
 
 const ASPECT_RATIOS = {
@@ -30,6 +31,7 @@ export default function ImageCard({
   loading = 'lazy',
   draggable = false,
   onClick,
+  isMobile = false,
 }: ImageCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [naturalRatio, setNaturalRatio] = useState<string | undefined>(undefined);
@@ -47,6 +49,26 @@ export default function ImageCard({
   
   const isAuto = aspectRatio === 'auto';
   const computedAspectRatio = isAuto ? undefined : (ASPECT_RATIOS[aspectRatio as keyof typeof ASPECT_RATIOS] || ASPECT_RATIOS.landscape);
+
+  // Tencent Cloud Image Optimization
+  // Add ?imageMogr2/format/webp/quality/75 if it's a COS URL
+  const optimizedSrc = React.useMemo(() => {
+      if (!src) return '';
+      if (src.includes('myqcloud.com') || src.includes('latentspace.top')) {
+          // Check if already has query params
+          const separator = src.includes('?') ? '&' : '?';
+          // Avoid double optimizing if params exist (unless we want to force it)
+          // For now, let's append our preferred optimization if not present
+          if (!src.includes('imageMogr2')) {
+              // Format: WebP, Quality: 75, Interlace: 1 (Progressive)
+              // Resize: Limit max dimension to 2560px (Desktop) or 1280px (Mobile) to save bandwidth
+              // 'r' means scale down only if larger, keeping aspect ratio
+              const maxDim = isMobile ? 1280 : 2560;
+              return `${src}${separator}imageMogr2/thumbnail/!${maxDim}x${maxDim}r/format/webp/quality/75/interlace/1`;
+          }
+      }
+      return src;
+  }, [src, isMobile]);
 
   return (
     <div
@@ -82,7 +104,7 @@ export default function ImageCard({
 
       {/* Real Image */}
       <img
-        src={src}
+        src={optimizedSrc}
         alt={alt}
         loading={loading}
         draggable={draggable}
