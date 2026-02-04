@@ -5,7 +5,7 @@ import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-mo
 import PhotoFrame from './PhotoFrame';
 import { Photo } from '@/data/photos';
 import { useInspectionMode } from '@/hooks/useInspectionMode';
-import { Grid, X, Send, MessageSquare, ChevronsDown } from 'lucide-react';
+import { Grid, X, Send, MessageSquare, ChevronsDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
@@ -382,8 +382,8 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       
       // Simply move targetX during scroll for responsiveness
       // But we will override it on snap
-      // REDUCED SENSITIVITY: 2.5/1.5 -> 1.2/0.8
-      targetX.current -= delta * (isTrackpad ? 1.2 : 0.8);
+      // REDUCED SENSITIVITY: 2.5/1.5 -> 1.2/0.8 -> INCREASED FOR WINDOWS MOUSE: 1.5
+      targetX.current -= delta * (isTrackpad ? 1.2 : 2.5);
       
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       
@@ -469,6 +469,36 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     }
   };
 
+  // Keyboard Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showIndex || showLoginModal || fullScreenPhoto || !isInspectingDesktop) {
+         // Allow navigation if not typing in inputs
+         if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      }
+      
+      // Basic Navigation
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+          // Next
+          if (activeIndex < photos.length) { // photos.length because index 0 is Preface
+              snapToElement(activeIndex + 1);
+          }
+      } else if (e.key === 'ArrowLeft') {
+          // Prev
+          if (activeIndex > 0) {
+              snapToElement(activeIndex - 1);
+          }
+      } else if (e.key === 'Escape') {
+          if (showIndex) setShowIndex(false);
+          if (fullScreenPhoto) setFullScreenPhoto(null);
+          if (isInspectingDesktop) setIsInspectingDesktop(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeIndex, photos.length, showIndex, showLoginModal, fullScreenPhoto, isInspectingDesktop]);
+
   return (
     <div 
       ref={containerRef} 
@@ -514,7 +544,9 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       <motion.div 
         ref={contentRef}
         style={isMobile ? {} : { x, skewX }}
-        className={isMobile ? 'w-full' : 'flex items-center gap-16'}
+        className={isMobile ? 'w-full' : 'flex items-center gap-16 cursor-grab active:cursor-grabbing'}
+        drag={!isMobile ? "x" : false}
+        dragConstraints={containerRef}
       >
         {/* Preface Section (Index 0) */}
         <div className={`flex flex-col justify-center items-center text-center relative ${isMobile ? 'h-[90vh] min-h-[calc(100vh-80px)] w-full snap-start border-b border-white/5' : 'shrink-0 w-screen h-screen'}`}>
@@ -669,6 +701,31 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
       {/* Desktop Controls */}
       {!isMobile && (
         <>
+            {/* Ghost Navigation Arrows */}
+            {/* Left Arrow - Prev */}
+            {activeIndex > 0 && (
+                <div 
+                    onClick={() => snapToElement(activeIndex - 1)}
+                    className="fixed top-0 left-0 bottom-0 w-24 z-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 cursor-pointer group/nav"
+                >
+                    <div className="bg-black/20 backdrop-blur-md p-4 rounded-full border border-white/5 transform group-hover/nav:scale-110 transition-transform">
+                        <ChevronLeft size={32} className="text-white/80" strokeWidth={1} />
+                    </div>
+                </div>
+            )}
+            
+            {/* Right Arrow - Next */}
+            {activeIndex < photos.length && (
+                <div 
+                    onClick={() => snapToElement(activeIndex + 1)}
+                    className="fixed top-0 right-0 bottom-0 w-24 z-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 cursor-pointer group/nav"
+                >
+                    <div className="bg-black/20 backdrop-blur-md p-4 rounded-full border border-white/5 transform group-hover/nav:scale-110 transition-transform">
+                        <ChevronRight size={32} className="text-white/80" strokeWidth={1} />
+                    </div>
+                </div>
+            )}
+
             {/* Desktop Toast */}
             <AnimatePresence>
                 {toastMessage && (
