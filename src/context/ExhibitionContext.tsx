@@ -11,8 +11,8 @@ interface CacheData {
 interface ExhibitionContextType {
   dashboardCache: CacheData | null;
   exploreCache: CacheData | null;
-  setDashboardCache: (data: any[]) => void;
-  setExploreCache: (data: any[]) => void;
+  setDashboardCache: (data: any[] | null) => void;
+  setExploreCache: (data: any[] | null) => void;
   invalidateCache: () => void;
 }
 
@@ -22,18 +22,26 @@ export function ExhibitionProvider({ children }: { children: ReactNode }) {
   const [dashboardCache, setDashboardState] = useState<CacheData | null>(null);
   const [exploreCache, setExploreState] = useState<CacheData | null>(null);
 
-  const setDashboardCache = (data: any[]) => {
-    setDashboardState({
-      exhibitions: data,
-      timestamp: Date.now()
-    });
+  const setDashboardCache = (data: any[] | null) => {
+    if (data === null) {
+      setDashboardState(null);
+    } else {
+      setDashboardState({
+        exhibitions: data,
+        timestamp: Date.now()
+      });
+    }
   };
 
-  const setExploreCache = (data: any[]) => {
-    setExploreState({
-      exhibitions: data,
-      timestamp: Date.now()
-    });
+  const setExploreCache = (data: any[] | null) => {
+    if (data === null) {
+      setExploreState(null);
+    } else {
+      setExploreState({
+        exhibitions: data,
+        timestamp: Date.now()
+      });
+    }
   };
 
   const invalidateCache = () => {
