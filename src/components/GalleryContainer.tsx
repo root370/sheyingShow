@@ -751,11 +751,23 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                             onClick={() => jumpToPhoto(idx)}
                             className="aspect-square relative cursor-pointer group overflow-hidden bg-gray-900"
                             >
-                            <Image
-                                src={photo.src}
+                            <img
+                                src={(() => {
+                                    const src = photo.src;
+                                    if (!src) return '';
+                                    // Tencent COS Optimization for Grid Thumbnails
+                                    // Target ~600px width/height for high density screens (4 cols * 1.5x)
+                                    if (src.includes('myqcloud.com') || src.includes('latentspace.top')) {
+                                        const separator = src.includes('?') ? '&' : '?';
+                                        if (!src.includes('imageMogr2')) {
+                                            return `${src}${separator}imageMogr2/thumbnail/!600x600r/format/webp/quality/60/interlace/1`;
+                                        }
+                                    }
+                                    return src;
+                                })()}
                                 alt={photo.alt}
-                                fill
-                                className="object-cover transition-transform duration-500 group-hover:scale-110 opacity-70 group-hover:opacity-100"
+                                loading="lazy"
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-70 group-hover:opacity-100"
                             />
                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                                 <span className="bg-black/50 text-white px-3 py-1 text-xs font-serif uppercase tracking-widest backdrop-blur-sm">查看</span>
