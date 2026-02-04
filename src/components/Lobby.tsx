@@ -158,7 +158,7 @@ export default function Lobby({ mode }: LobbyProps) {
       // const currentCache = mode === 'dashboard' ? dashboardCache : exploreCache;
       // const currentCache = null; // Force refresh disabled, using smart cache
       // FORCE CLEAR CACHE:
-      const currentCache = null;
+      const currentCache = null as any;
       if (mode === 'dashboard' && dashboardCache) setDashboardCache(null);
       if (mode === 'explore' && exploreCache) setExploreCache(null);
       
