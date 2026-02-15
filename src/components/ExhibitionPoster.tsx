@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Exhibition } from '@/data/exhibitions';
-import { Bookmark, Sparkles, Trash2, Edit } from 'lucide-react';
+import { Bookmark, Sparkles, Trash2, Edit, Gem, MessageCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/router';
 import ConfirmDialog from './ConfirmDialog';
@@ -15,25 +15,29 @@ interface ExhibitionPosterProps {
   showAuthor?: boolean;
   onDelete?: (id: string) => void;
   initialCollected?: boolean;
+  priority?: boolean;
 }
 
-const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, showAuthor, onDelete, initialCollected = false }) => {
+const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, showAuthor, onDelete, initialCollected = false, priority = false }) => {
   const router = useRouter();
   const ex = exhibition as any;
   const [isCollected, setIsCollected] = useState(initialCollected);
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const isOwner = ex.type === 'own';
   // ...
   useEffect(() => {
+    let isMounted = true;
+    
     async function checkStatus() {
       // If we already know it's collected (passed via prop), skip the check
       if (!showAuthor || initialCollected) return; 
       
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user || !isMounted) return;
 
         const { data } = await supabase
           .from('collections')
@@ -42,13 +46,15 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
           .eq('exhibition_id', exhibition.id)
           .maybeSingle();
         
-        if (data) setIsCollected(true);
+        if (data && isMounted) setIsCollected(true);
       } catch (error) {
         // Ignore errors, likely auth check failed or component unmounted
-        console.warn("Collection status check failed", error);
+        if (isMounted) console.warn("Collection status check failed", error);
       }
     }
     checkStatus();
+    
+    return () => { isMounted = false; };
   }, [exhibition.id, showAuthor]);
 
   const toggleCollect = async (e: React.MouseEvent) => {
@@ -135,22 +141,36 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
   };
 
   return (
-    <div className="group relative w-full flex flex-col gap-2 mb-8 md:mb-12 break-inside-avoid">
+    <div className="group relative w-full flex flex-col gap-1 mb-6 md:mb-12 break-inside-avoid">
         <Link href={`/exhibition/${exhibition.id}`} className="block w-full" prefetch={false}>
             {/* 1. Card Container */}
             <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-full rounded-lg overflow-hidden group bg-neutral-900 border border-white/10 md:hover:shadow-xl md:hover:scale-[1.02] transition-all duration-500 ease-out"
+                // Only animate the first few items to prevent scroll-in delay for deep items
+                // If index > 12, make it instant or very fast
+                transition={
+                    index < 12 
+                    ? { delay: Math.min(index * 0.05, 0.5), duration: 0.5, ease: [0.16, 1, 0.3, 1] }
+                    : { duration: 0 }
+                }
+                className="relative w-full rounded-lg md:rounded-lg overflow-hidden group bg-neutral-900 border border-white/10 md:hover:shadow-[0_4px_20px_-5px_rgba(34,211,238,0.3)] md:hover:-translate-y-1 transition-all duration-500 ease-out"
             >
                 {/* Image Container - Height Auto, No Cropping */}
-                <div className="relative w-full h-auto min-h-[100px] bg-neutral-900">
+                <div className={`relative w-full bg-neutral-900 overflow-hidden transition-all duration-500 ${imageLoaded ? '' : 'animate-pulse'}`}>
+                        {/* Loading Skeleton/Spinner when image is not loaded */}
+                        {!imageLoaded && (
+                            <div className="w-full aspect-[3/4] flex items-center justify-center bg-neutral-800">
+                                <div className="w-8 h-8 border-2 border-white/10 border-t-white/50 rounded-full animate-spin" />
+                            </div>
+                        )}
+                        
                         <img
-                        src={`${exhibition.cover}${exhibition.cover?.includes('?') ? '&' : '?'}v=${new Date((exhibition as any).created_at).getTime()}`}
+                        src={exhibition.cover}
                         alt={exhibition.title}
-                        className="w-full h-auto block object-contain md:grayscale-[20%] md:brightness-90 md:group-hover:grayscale-0 md:group-hover:brightness-100 transition-all duration-700 ease-out"
-                        loading="lazy"
+                        className={`w-full h-auto block object-cover md:grayscale-[20%] md:brightness-90 md:group-hover:grayscale-0 md:group-hover:brightness-100 transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+                        loading={priority ? "eager" : "lazy"}
+                        onLoad={() => setImageLoaded(true)}
                     />
                     
                     {/* Cinematic Gradient Overlay */}
@@ -181,54 +201,134 @@ const ExhibitionPoster: React.FC<ExhibitionPosterProps> = ({ exhibition, index, 
 
             {/* 2. Text Info (Below Card) */}
             <div className="px-1 mt-1">
-                 <div className="flex items-center justify-between">
-                    <div className="flex items-center overflow-hidden">
-                        {/* Hidden Icon that slides in */}
-                        <span className="relative w-0 group-hover:w-8 transition-all duration-300 ease-out overflow-hidden flex items-center justify-center">
-                            <span className="opacity-0 -translate-x-full group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 ease-out text-accent">
-                                <Sparkles size={20} fill="currentColor" />
-                            </span>
-                        </span>
-                        
-                        {/* Title that slides right */}
-                        <h2 className="font-serif text-sm md:text-2xl text-white group-hover:text-accent transition-colors duration-300 transform group-hover:translate-x-2 transition-transform ease-out line-clamp-1 break-all">
+                 {/* Mobile: Simplified Footer */}
+                 <div className="md:hidden flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-serif text-sm text-white line-clamp-1 break-all flex-1">
                             {exhibition.title}
                         </h2>
+                        
+                        {/* Mobile Owner Actions: Always visible, Icons only */}
+                        {isOwner && (
+                            <div className="flex items-center gap-4 pl-2">
+                                <button
+                                    onClick={handleEdit}
+                                    className="text-white/60 hover:text-white p-1"
+                                >
+                                    <Edit size={14} />
+                                </button>
+                                <button
+                                    onClick={handleDeleteClick}
+                                    className="text-white/60 hover:text-red-400 p-1"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        )}
                     </div>
-
-                    <span className="text-white/30 text-[10px] font-sans tracking-widest uppercase">
-                        {ex.year}
-                    </span>
+                    
+                    {showAuthor && ex.username && (
+                        <div className="flex items-center justify-between">
+                            {/* Author */}
+                            <div className="flex items-center gap-1.5 opacity-60">
+                                <div className="h-[1px] w-3 bg-white/40" />
+                                <span className="text-[10px] font-sans uppercase tracking-wider">{ex.username}</span>
+                            </div>
+                            
+                            {/* Picks & Comments */}
+                            <div className="flex items-center gap-2">
+                                {exhibition.has_picks && (
+                                    <div className="flex items-center gap-1 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.6)]">
+                                        <Gem size={10} fill="currentColor" strokeWidth={0} />
+                                        <span className="text-[10px] font-mono font-bold">{ex.total_picks || 0}</span>
+                                    </div>
+                                )}
+                                {(exhibition.comments_count || 0) > 0 && (
+                                    <div className="flex items-center gap-1 text-white/40">
+                                        <MessageCircle size={10} strokeWidth={1.5} />
+                                        <span className="text-[10px] font-sans font-medium">{exhibition.comments_count}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                  </div>
-                 
-                 {showAuthor && ex.username && (
-                    <div className="flex items-center gap-2 mt-2 pl-0 group-hover:pl-10 transition-all duration-300 ease-out">
-                        <div className="h-[1px] w-4 bg-white/20" />
-                        <p className="text-white/50 text-xs font-sans tracking-wider uppercase">
-                            {ex.username}
-                        </p>
-                    </div>
-                 )}
 
-                 {/* Owner Actions (Moved to bottom right, subtle text buttons) */}
-                {isOwner && (
-                    <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <button
-                            onClick={handleEdit}
-                            className="flex items-center gap-2 text-[10px] text-white/40 hover:text-white uppercase tracking-widest transition-colors"
-                        >
-                            <Edit size={12} />
-                            <span>编辑</span>
-                        </button>
-                        <button
-                            onClick={handleDeleteClick}
-                            className="flex items-center gap-2 text-[10px] text-white/40 hover:text-red-400 uppercase tracking-widest transition-colors"
-                        >
-                            <Trash2 size={12} />
-                            <span>移除</span>
-                        </button>
+                 {/* Desktop: Full Footer */}
+                 <div className="hidden md:block">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center overflow-hidden">
+                            {/* Hidden Icon that slides in */}
+                            <span className="relative w-0 group-hover:w-8 transition-all duration-300 ease-out overflow-hidden flex items-center justify-center">
+                                <span className="opacity-0 -translate-x-full group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 ease-out text-accent">
+                                    <Sparkles size={20} fill="currentColor" />
+                                </span>
+                            </span>
+                            
+                            {/* Title that slides right */}
+                            <h2 className="font-serif text-sm md:text-2xl text-white group-hover:text-accent transition-colors duration-300 ease-out line-clamp-1 break-all">
+                                {exhibition.title}
+                            </h2>
+
+                             {/* Owner Actions (Moved here) */}
+                             {isOwner && (
+                                <div className="flex items-center gap-3 ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                    <button
+                                        onClick={handleEdit}
+                                        className="text-white/40 hover:text-white transition-colors p-1"
+                                        title="编辑"
+                                    >
+                                        <Edit size={14} />
+                                    </button>
+                                    <button
+                                        onClick={handleDeleteClick}
+                                        className="text-white/40 hover:text-red-400 transition-colors p-1"
+                                        title="移除"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <span className="text-white/30 text-[10px] font-sans tracking-widest uppercase">
+                            {ex.year}
+                        </span>
                     </div>
-                )}
+                    
+                    {showAuthor && ex.username && (
+                        <div className="flex items-center justify-between mt-2 pl-0 group-hover:pl-10 transition-all duration-300 ease-out">
+                            {/* Left: Author */}
+                            <div className="flex items-center gap-2">
+                                <div className="h-[1px] w-4 bg-white/20" />
+                                <p className="text-white/50 text-xs font-sans tracking-wider uppercase">
+                                    {ex.username}
+                                </p>
+                            </div>
+
+                            {/* Right: Meta Info (Picks & Comments) */}
+                            <div className="flex items-center gap-3 pr-1">
+                                {/* Pick Indicator */}
+                                {exhibition.has_picks && (
+                                    <div className="flex items-center gap-1 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.6)]">
+                                        <Gem size={12} fill="currentColor" strokeWidth={0} className="animate-pulse" />
+                                        <span className="text-[10px] font-mono font-bold tracking-wider">
+                                            {ex.total_picks || 0}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Comment Counter */}
+                                {(exhibition.comments_count || 0) > 0 && (
+                                    <div className="flex items-center gap-1 text-white/40">
+                                        <MessageCircle size={12} strokeWidth={1.5} />
+                                        <span className="text-[10px] font-sans font-medium">{exhibition.comments_count}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                 </div>
             </div>
         </Link>
         

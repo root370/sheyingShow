@@ -3,6 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, MailOpen } from 'lucide-react';
+import ShareButton from './ShareButton';
 
 interface Comment {
     id: string;
@@ -122,13 +123,17 @@ export default function ResonanceLetter({ username, comments, onClose }: Resonan
                             </p>
                         </div>
 
-                        <button
-                            onClick={onClose}
-                            className="group relative px-8 py-3 bg-white text-black font-sans text-xs font-bold uppercase tracking-[0.2em] hover:bg-gray-200 transition-colors overflow-hidden"
-                        >
-                            <span className="relative z-10">收下这份温暖</span>
-                            <div className="absolute inset-0 bg-cyan-400/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out" />
-                        </button>
+                        <div className="flex flex-col items-center gap-6">
+                            <button
+                                onClick={onClose}
+                                className="group relative px-8 py-3 bg-white text-black font-sans text-xs font-bold uppercase tracking-[0.2em] hover:bg-gray-200 transition-colors overflow-hidden"
+                            >
+                                <span className="relative z-10">收下这份温暖</span>
+                                <div className="absolute inset-0 bg-cyan-400/20 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out" />
+                            </button>
+                            
+                            <ShareButton />
+                        </div>
                     </div>
 
                 </div>

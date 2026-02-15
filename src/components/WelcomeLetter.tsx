@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import ShareButton from './ShareButton';
 
 const WelcomeLetter = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -160,7 +161,7 @@ const WelcomeLetter = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 1.5, delay: letterType === 'vid' ? 11 : 21 }} 
-                className="flex justify-center pt-12 pb-8"
+                className="flex flex-col items-center gap-6 pt-12 pb-8"
               >
                 <button
                   onClick={handleClose}
@@ -172,6 +173,8 @@ const WelcomeLetter = () => {
                     <ArrowRight size={16} className="opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-500" />
                   </span>
                 </button>
+
+                <ShareButton />
               </motion.div>
             </div>
           </div>

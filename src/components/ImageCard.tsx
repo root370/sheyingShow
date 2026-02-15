@@ -12,6 +12,7 @@ interface ImageCardProps {
   loading?: 'lazy' | 'eager';
   draggable?: boolean;
   onClick?: () => void;
+  onImageLoad?: (width: number, height: number) => void;
   isMobile?: boolean;
 }
 
@@ -31,6 +32,7 @@ export default function ImageCard({
   loading = 'lazy',
   draggable = false,
   onClick,
+  onImageLoad,
   isMobile = false,
 }: ImageCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -108,7 +110,12 @@ export default function ImageCard({
         alt={alt}
         loading={loading}
         draggable={draggable}
-        onLoad={() => setIsLoaded(true)}
+        onLoad={(e) => {
+          setIsLoaded(true);
+          if (onImageLoad) {
+            onImageLoad(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+          }
+        }}
         className={`block w-full h-full object-contain transition-opacity duration-700 ease-in-out ${
           isLoaded ? 'opacity-100' : 'opacity-0'
         }`}

@@ -5,12 +5,13 @@ import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-mo
 import PhotoFrame from './PhotoFrame';
 import { Photo } from '@/data/photos';
 import { useInspectionMode } from '@/hooks/useInspectionMode';
-import { Grid, X, Send, MessageSquare, ChevronsDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Grid, X, Send, MessageSquare, ChevronsDown, ChevronLeft, ChevronRight, Gem } from 'lucide-react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 import LoginModal from './LoginModal';
 import VerticalProgressBar from './VerticalProgressBar';
+import { useRouter } from 'next/router';
 
 const LightRays = dynamic(() => import('./LightRays'), { ssr: false });
 
@@ -23,9 +24,124 @@ interface GalleryContainerProps {
 }
 
 export default function GalleryContainer({ photos, exhibitionId, title, description, isAuthor: initialIsAuthor = false }: GalleryContainerProps) {
+  const router = useRouter();
+  const { targetPhotoId, instant } = router.query;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   
+  // State Definitions (Moved Up)
+  const [isAuthor, setIsAuthor] = useState(initialIsAuthor);
+  const [isMobile, setIsMobile] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Pick System State
+  const [picksCounts, setPicksCounts] = useState<Record<string, number>>({});
+  const [userPicks, setUserPicks] = useState<string[]>([]);
+
+  // Initialize counts
+  useEffect(() => {
+    const counts: Record<string, number> = {};
+    photos.forEach(p => {
+        counts[p.id] = p.picks_count || 0;
+    });
+    setPicksCounts(counts);
+  }, [photos]);
+
+  // Fetch User Picks
+  useEffect(() => {
+    async function fetchPicks() {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            
+            const { data, error } = await supabase
+                .from('photo_picks')
+                .select('photo_id')
+                .eq('user_id', user.id)
+                .in('photo_id', photos.map(p => p.id));
+                
+            if (error) {
+                // Ignore table not found error silently (migration not run yet)
+                if (error.code !== '42P01') {
+                    console.warn("Error fetching picks:", error);
+                }
+                return;
+            }
+
+            if (data) {
+                setUserPicks(data.map(r => r.photo_id));
+            }
+        } catch (e) {
+            // Network or other unexpected errors
+            console.warn("Failed to fetch user picks", e);
+        }
+    }
+    fetchPicks();
+  }, [photos]);
+
+  const handlePick = async (photoId: string) => {
+      // Auth Check using local state
+      if (!currentUser) {
+          setShowLoginModal(true);
+          return;
+      }
+
+      // Optimistic
+      const isPicked = userPicks.includes(photoId);
+      const newPicked = !isPicked;
+      
+      setUserPicks(prev => newPicked ? [...prev, photoId] : prev.filter(id => id !== photoId));
+      setPicksCounts(prev => ({
+          ...prev,
+          [photoId]: Math.max(0, (prev[photoId] || 0) + (newPicked ? 1 : -1))
+      }));
+
+      try {
+          const { data: { session } } = await supabase.auth.getSession();
+           if (!session) throw new Error("Login required");
+          
+          const res = await fetch(`/api/photo/${photoId}/pick`, { 
+              method: 'POST', 
+              headers: { 'Authorization': `Bearer ${session.access_token}` }
+          });
+          if (!res.ok) throw new Error('Failed');
+          const data = await res.json();
+          // Sync with server
+          setPicksCounts(prev => ({ ...prev, [photoId]: data.count }));
+      } catch (e) {
+          console.error(e);
+          // Revert
+          setUserPicks(prev => isPicked ? [...prev, photoId] : prev.filter(id => id !== photoId));
+           setPicksCounts(prev => ({
+              ...prev,
+              [photoId]: Math.max(0, (prev[photoId] || 0) + (isPicked ? 1 : -1))
+          }));
+      }
+  };
+
+  // Deep Link Auto Scroll
+  useEffect(() => {
+    if (targetPhotoId && photos.length > 0) {
+        const index = photos.findIndex(p => p.id === targetPhotoId);
+        if (index !== -1) {
+            // Wait for layout initialization
+            setTimeout(() => {
+                if (isMobile) {
+                    // Mobile: Vertical Scroll
+                    const items = contentRef.current?.children;
+                    if (items && items[index + 1]) { // +1 for Preface
+                        items[index + 1].scrollIntoView({ behavior: 'smooth' });
+                    }
+                } else {
+                    // Desktop: Horizontal Physics Snap
+                    snapToElement(index + 1); 
+                }
+            }, 800);
+        }
+    }
+  }, [targetPhotoId, photos, isMobile]);
+
   // Physics State
   const x = useMotionValue(0); // The value used for rendering
   const skewX = useMotionValue(0);
@@ -44,9 +160,6 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [isSent, setIsSent] = useState(false); // Track success state for animation
-
-  const [isAuthor, setIsAuthor] = useState(initialIsAuthor);
-  const [isMobile, setIsMobile] = useState(false);
 
   // State for Login Modal
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -69,9 +182,6 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   // Desktop: isInspectingDesktop -> 'mixed' (Legacy support for desktop until refactor)
   const interactionMode = isMobile ? mobileInteractionMode : (isInspectingDesktop ? 'mixed' : 'none');
   
-  // Spotlight Colors (Preface is index 0)
-  const activeColor = activeIndex === 0 ? '#050505' : photos[activeIndex - 1]?.color || '#050505';
-
   // Calculate bounds and item positions
   const [itemPositions, setItemPositions] = useState<number[]>([]);
 
@@ -88,64 +198,68 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const handleToggleDesktopInspect = () => {
-      // Auth Check
-      if (!isAuthor && !isInspectingDesktop) { // Use isAuthor for quick check, or better, check currentUserId if you have it in context, 
-          // But wait, we need to check if they are logged in AT ALL, not just if they are the author.
-          // We can check supabase user again or use a state if we stored it.
-          // Let's use supabase directly here for safety or add a user state.
-          // Since checkAuthor runs on load, let's add a `isLoggedIn` state for clearer logic.
-      }
-      // Actually, we can just check supabase session synchronously-ish or trust the checkAuthor result if we expand it.
-      // Let's assume we want to block VISITORS.
-      // We can check if `isAuthor` is true -> they are logged in (and owner).
-      // But regular logged-in users (non-owners) should also be allowed?
-      // "Goal: When a visitor (not logged in) tries to comment..."
-      
-      // Let's check session on click to be safe and simple
-      supabase.auth.getUser().then(({ data: { user } }) => {
-          if (!user) {
-              setShowLoginModal(true);
+      // Auth Check using local state for instant response
+      if (!currentUser) {
+          setShowLoginModal(true);
+      } else {
+         // Proceed
+          const newState = !isInspectingDesktop;
+          setIsInspectingDesktop(newState);
+          
+          if (isAuthor) {
+              setToastMessage(newState ? "评论已显示" : "评论已隐藏");
           } else {
-             // Proceed
-              const newState = !isInspectingDesktop;
-              setIsInspectingDesktop(newState);
-              
-              if (isAuthor) {
-                  setToastMessage(newState ? "评论已显示" : "评论已隐藏");
-              } else {
-                  // Visitor (Logged In)
-                  if (newState) {
-                      setToastMessage("点击图片任意位置留言。");
-                  } else {
-                      setToastMessage(null);
-                  }
-              }
-              
-              // Auto hide toast
-              setTimeout(() => setToastMessage(null), 3000);
-          }
-      });
-  };
-  
-  // Mobile: Toggle Comment Mode
-  const handleMobileModeChange = (mode: 'none' | 'view' | 'add') => {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-          if (!user && mode !== 'none') {
-              setShowLoginModal(true);
-          } else {
-              setMobileInteractionMode(mode);
-              
-              if (mode === 'add') {
-                  setToastMessage("点击图片空白处留言");
-              } else if (mode === 'view') {
-                  setToastMessage(isAuthor ? "评论已显示" : "查看评论模式");
+              // Visitor (Logged In)
+              if (newState) {
+                  setToastMessage("点击图片任意位置留言。");
               } else {
                   setToastMessage(null);
               }
-              setTimeout(() => setToastMessage(null), 3000);
           }
-      });
+          
+          // Auto hide toast
+          setTimeout(() => setToastMessage(null), 3000);
+      }
   };
+  
+  // Mobile: Toggle Comment Mode
+  const handleMobileModeChange = React.useCallback((mode: 'none' | 'view' | 'add') => {
+      // Auth Check using local state for instant response
+      if (!currentUser && mode !== 'none') {
+          setShowLoginModal(true);
+      } else {
+          setMobileInteractionMode(mode);
+          
+          if (mode === 'add') {
+              setToastMessage("点击图片空白处留言");
+          } else if (mode === 'view') {
+              setToastMessage(isAuthor ? "评论已显示" : "查看评论模式");
+          } else {
+              setToastMessage(null);
+          }
+          setTimeout(() => setToastMessage(null), 3000);
+      }
+  }, [isAuthor, currentUser]);
+
+  const handleExpand = React.useCallback((id: string) => {
+    const photo = photos.find(p => p.id === id);
+    if (photo) setFullScreenPhoto(photo);
+  }, [photos]);
+
+  const handleNext = React.useCallback((index: number) => {
+      if (isMobile && !isAuthor) {
+          setMobileInteractionMode('none');
+      }
+      if (index === photos.length - 1) {
+          // Last Photo -> Scroll to Echo Wall
+          const echoWall = contentRef.current?.children[index + 2];
+          echoWall?.scrollIntoView({ behavior: 'smooth' });
+      } else {
+          // Next Photo
+          const nextElement = contentRef.current?.children[index + 2]; // +1 for Preface, +1 for Next
+          nextElement?.scrollIntoView({ behavior: 'smooth' });
+      }
+  }, [isMobile, isAuthor, photos.length]);
 
   // Detect Mobile
   useEffect(() => {
@@ -157,28 +271,37 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Check if current user is the author
+  // Check if current user is the author and store user session
   useEffect(() => {
-    if (initialIsAuthor) return; // Already confirmed by server (if it worked)
-    
-    async function checkAuthor() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      
-      const { data: ex } = await supabase
-        .from('exhibitions')
-        .select('user_id')
-        .eq('id', exhibitionId)
-        .single();
+    async function checkUserAndAuthor() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUser(user);
         
-      if (ex && ex.user_id === user.id) {
-          setIsAuthor(true);
-          // Owner View: Initial State showComments = true
-          if (isMobile) setMobileInteractionMode('view');
-          else setIsInspectingDesktop(true); // Desktop Owner Default
+        if (!user) return;
+        
+        if (initialIsAuthor) {
+            setIsAuthor(true);
+            return;
+        }
+
+        const { data: ex } = await supabase
+          .from('exhibitions')
+          .select('user_id')
+          .eq('id', exhibitionId)
+          .single();
+          
+        if (ex && ex.user_id === user.id) {
+            setIsAuthor(true);
+            // Owner View: Initial State showComments = true
+            if (isMobile) setMobileInteractionMode('view');
+            else setIsInspectingDesktop(true); // Desktop Owner Default
+        }
+      } catch (err) {
+        console.warn("[GalleryContainer] User/Author check failed:", err);
       }
     }
-    checkAuthor();
+    checkUserAndAuthor();
   }, [exhibitionId, initialIsAuthor, isMobile]);
 
   // Calculate Layout on Resize or Data Change
@@ -499,6 +622,40 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeIndex, photos.length, showIndex, showLoginModal, fullScreenPhoto, isInspectingDesktop]);
 
+  // Breathing Icon Logic
+  const [isBreathing, setIsBreathing] = useState(false);
+  useEffect(() => {
+    // Start breathing if inactive for 15s
+    const timer = setTimeout(() => {
+        setIsBreathing(true);
+    }, 15000);
+
+    const resetBreathing = () => {
+        setIsBreathing(false);
+        clearTimeout(timer);
+    };
+
+    window.addEventListener('mousemove', resetBreathing);
+    window.addEventListener('click', resetBreathing);
+    window.addEventListener('scroll', resetBreathing);
+    window.addEventListener('keydown', resetBreathing);
+
+    return () => {
+        clearTimeout(timer);
+        window.removeEventListener('mousemove', resetBreathing);
+        window.removeEventListener('click', resetBreathing);
+        window.removeEventListener('scroll', resetBreathing);
+        window.removeEventListener('keydown', resetBreathing);
+    };
+  }, [activeIndex]);
+
+  // Receive comment count from active PhotoFrame
+  const [currentPhotoCommentCount, setCurrentPhotoCommentCount] = useState<number>(0);
+
+  const handleCommentCountChange = React.useCallback((count: number) => {
+      setCurrentPhotoCommentCount(count);
+  }, []);
+
   return (
     <div 
       ref={containerRef} 
@@ -594,88 +751,93 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
               aspectRatio={photo.aspectRatio}
               annotations={photo.annotations}
               interactionMode={interactionMode}
-              skipDeveloping={isAuthor}
+              skipDeveloping={isAuthor || (instant === 'true' && targetPhotoId === photo.id)}
+              highlight={instant === 'true' && targetPhotoId === photo.id}
+              picksCount={picksCounts[photo.id]}
+              isPicked={userPicks.includes(photo.id)}
               exif={photo.exif}
               isMobile={isMobile}
               isOwner={isAuthor}
               onDevelop={handlePhotoDevelop}
-              onExpand={() => setFullScreenPhoto(photo)}
+              onExpand={handleExpand}
               priority={index < 2}
               isActive={activeIndex === index + 1}
-              onNext={() => {
-                  if (isMobile && !isAuthor) {
-                      setMobileInteractionMode('none');
-                  }
-                  if (index === photos.length - 1) {
-                      // Last Photo -> Scroll to Guestbook
-                      const guestbookElement = contentRef.current?.children[index + 2];
-                      guestbookElement?.scrollIntoView({ behavior: 'smooth' });
-                  } else {
-                      // Next Photo
-                      const nextElement = contentRef.current?.children[index + 2]; // +1 for Preface, +1 for Next
-                      nextElement?.scrollIntoView({ behavior: 'smooth' });
-                  }
-              }}
+              onNext={handleNext}
               onModeChange={handleMobileModeChange}
+              onCommentCountChange={handleCommentCountChange}
               isLast={index === photos.length - 1}
+              index={index}
             />
           </div>
         ))}
 
-        {/* Guestbook Slide (Final) */}
-        <div className={`flex flex-col justify-center items-center relative p-8 ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen'}`}>
-            <div className="max-w-2xl w-full flex flex-col items-center">
-                <h2 className="font-serif text-4xl text-white mb-8 text-center tracking-widest uppercase">留言</h2>
+        {/* The Echo Wall (Final Section) */}
+        <div className={`flex flex-col justify-center items-center relative p-8 bg-[#080808] ${isMobile ? 'h-screen w-full snap-start' : 'shrink-0 w-screen h-screen md:ml-[50vw]'}`}>
+            <div className="max-w-4xl w-full flex flex-col items-center">
+                <div className="mb-12 text-center">
+                    <h2 className="font-serif text-5xl md:text-6xl text-white mb-4 tracking-wider">Echoes</h2>
+                    <p className="font-serif text-xl text-gray-500 italic">回响</p>
+                </div>
                 
-                {/* Message Input */}
-                <form onSubmit={handleSendMessage} className="mb-12 relative w-full">
-                    <input 
-                        type="text" 
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="写下此刻的感受..."
-                        className="w-full bg-transparent border-b border-white/20 py-4 px-2 text-xl font-serif text-white placeholder-white/30 focus:outline-none focus:border-white transition-colors pr-12"
-                    />
-                    <button 
-                        type="submit"
-                        disabled={sending}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors disabled:opacity-30"
-                    >
-                        <motion.div
-                            animate={isSent ? { 
-                                x: [0, 100, -100, 0], 
-                                opacity: [1, 0, 0, 1],
-                                scale: [1, 0.5, 0.5, 1]
-                            } : {}}
-                            transition={{ duration: 0.8, ease: "easeInOut" }}
-                        >
-                            <Send size={20} className={isSent ? "text-green-400" : ""} />
-                        </motion.div>
-                    </button>
-                </form>
+                {/* Featured Comments (Top 3) */}
+                {guestbookEntries.length > 0 && (
+                     <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+                        {guestbookEntries.slice(0, 3).map((entry, i) => (
+                            <motion.div 
+                                key={entry.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.1 }}
+                                className="bg-white/5 p-6 rounded-sm border border-white/10 relative group hover:bg-white/10 transition-colors"
+                            >
+                                <div className="absolute -top-3 -left-2 text-4xl text-white/10 font-serif">“</div>
+                                <p className="font-['Caveat',_cursive] text-2xl text-gray-200 leading-relaxed mb-4 line-clamp-4">
+                                    {entry.message}
+                                </p>
+                                <div className="flex justify-between items-end border-t border-white/5 pt-4">
+                                    <span className="text-xs font-sans text-gray-400 uppercase tracking-wider">
+                                        {entry.profiles?.username || 'Visitor'}
+                                    </span>
+                                </div>
+                            </motion.div>
+                        ))}
+                     </div>
+                )}
 
-                {/* Messages Display */}
-                <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[40vh] overflow-y-auto pr-4 custom-scrollbar mb-8">
-                    {guestbookEntries.map((entry) => (
-                        <div key={entry.id} className="bg-white/5 p-4 rounded-sm border border-white/10 relative group hover:border-white/30 transition-colors">
-                            <p className="font-['Caveat',_cursive] text-2xl text-gray-200 leading-relaxed">
-                                "{entry.message}"
-                            </p>
-                            <div className="mt-4 flex justify-between items-center border-t border-white/5 pt-2">
-                                <span className="text-[10px] font-sans text-gray-500 uppercase tracking-wider">
-                                    {new Date(entry.created_at).toLocaleDateString()}
-                                </span>
-                                <span className="text-[10px] font-sans text-gray-400 uppercase tracking-wider">
-                                    {entry.profiles?.username || 'Visitor'}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-                    {guestbookEntries.length === 0 && (
-                        <div className="col-span-full text-center text-white/20 font-serif italic">
-                            暂无留言...
-                        </div>
-                    )}
+                {/* Message Input CTA */}
+                <div className="w-full max-w-2xl mx-auto relative group">
+                    <form onSubmit={handleSendMessage} className="relative w-full">
+                        <input 
+                            type="text" 
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            placeholder={
+                                guestbookEntries.length === 0 
+                                ? "成为第一个留下印记的人..." 
+                                : ["这组影像带给了你什么感受？", "写下这一刻的想法...", "你的回响..."][Math.floor(Math.random() * 3)]
+                            }
+                            className={`w-full bg-transparent border-b-2 ${guestbookEntries.length === 0 ? 'text-3xl py-6 border-white/30' : 'text-xl py-4 border-white/20'} font-serif text-white placeholder-white/30 focus:outline-none focus:border-white transition-all pr-16`}
+                        />
+                        <button 
+                            type="submit"
+                            disabled={sending}
+                            className="absolute right-0 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white transition-colors disabled:opacity-30"
+                        >
+                            <motion.div
+                                animate={isSent ? { 
+                                    x: [0, 100, -100, 0], 
+                                    opacity: [1, 0, 0, 1],
+                                    scale: [1, 0.5, 0.5, 1]
+                                } : {}}
+                                transition={{ duration: 0.8, ease: "easeInOut" }}
+                            >
+                                <Send size={guestbookEntries.length === 0 ? 32 : 24} className={isSent ? "text-green-400" : ""} strokeWidth={1} />
+                            </motion.div>
+                        </button>
+                    </form>
+                    <div className="absolute -bottom-8 left-0 text-white/20 text-xs tracking-widest uppercase opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                        Press Enter to send
+                    </div>
                 </div>
 
                 {/* Back to Top Button */}
@@ -684,7 +846,7 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                         onClick={() => {
                             containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="flex flex-col items-center gap-2 text-white/30 hover:text-white/80 transition-colors group animate-pulse"
+                        className="mt-20 flex flex-col items-center gap-2 text-white/30 hover:text-white/80 transition-colors group animate-pulse"
                     >
                         <div className="p-3 border border-white/10 rounded-full group-hover:border-white/50 transition-colors">
                              <ChevronsDown size={20} className="rotate-180" />
@@ -742,11 +904,54 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                 )}
             </AnimatePresence>
 
+            {/* Desktop Pick Button */}
+            {(() => {
+                 const isViewingPhoto = activeIndex > 0 && activeIndex <= photos.length;
+                 const currentPhoto = photos[activeIndex - 1];
+                 
+                 if (isViewingPhoto && currentPhoto) {
+                     const picked = userPicks.includes(currentPhoto.id);
+                     const count = picksCounts[currentPhoto.id] || 0;
+                     
+                     return (
+                         <div className="fixed bottom-8 right-44 z-40 group flex flex-col items-center">
+                             <button 
+                                 onClick={() => handlePick(currentPhoto.id)}
+                                 className={`p-4 rounded-full backdrop-blur-md border transition-all hover:scale-110 active:scale-95 shadow-lg relative z-10 ${
+                                     picked
+                                     ? 'bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]' 
+                                     : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
+                                 }`}
+                             >
+                                <div className="flex items-center gap-2">
+                                     <Gem size={24} strokeWidth={1.5} fill={picked ? "currentColor" : "none"} />
+                                     {count > 0 && (
+                                         <span className="text-xs font-bold font-sans">{count > 999 ? (count / 1000).toFixed(1) + 'k' : count}</span>
+                                     )}
+                                </div>
+                             </button>
+                             <div className="absolute top-full mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 whitespace-nowrap z-20">
+                                 <p className="text-[10px] font-sans tracking-widest uppercase text-white">
+                                     {picked ? "取消精选" : "精选"}
+                                 </p>
+                             </div>
+                         </div>
+                     );
+                 }
+                 return null;
+            })()}
+
             {/* Desktop Comment Toggle - Only show when viewing photos */}
             {(() => {
                  const isViewingPhoto = activeIndex > 0 && activeIndex <= photos.length;
                  const currentPhoto = photos[activeIndex - 1];
                  const isDeveloped = currentPhoto && developedPhotoIds.includes(currentPhoto.id);
+                 
+                 // Show button if: 
+                 // 1. Author
+                 // 2. Photo is developed
+                 // 3. OR if there are comments (even if not developed? Maybe stick to developed logic for consistency)
+                 // Let's stick to isAuthor || isDeveloped for now, as comments on undeveloped photos are rare/impossible by design.
 
                  if (isViewingPhoto && (isAuthor || isDeveloped)) {
                      return (
@@ -759,13 +964,36 @@ export default function GalleryContainer({ photos, exhibitionId, title, descript
                                      : 'bg-white/10 text-white border-white/10 hover:bg-white/20'
                                  }`}
                              >
-                                 <MessageSquare size={24} fill={isInspectingDesktop ? "currentColor" : "none"} strokeWidth={1.5} />
+                                  <motion.div
+                                     animate={(isBreathing || currentPhotoCommentCount > 0) && !isInspectingDesktop ? {
+                                         scale: [1, 1.15, 1],
+                                     } : {}}
+                                     transition={{
+                                         duration: 3,
+                                         ease: "easeInOut",
+                                         repeat: Infinity
+                                     }}
+                                     className="relative"
+                                  >
+                                     <MessageSquare size={24} fill={isInspectingDesktop ? "currentColor" : "none"} strokeWidth={1.5} />
+                                     
+                                     {/* Comment Count Badge - Relative to Icon */}
+                                     {currentPhotoCommentCount > 0 && (
+                                      <motion.div 
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border border-black shadow-sm"
+                                      >
+                                          {currentPhotoCommentCount > 9 ? '9+' : currentPhotoCommentCount}
+                                      </motion.div>
+                                     )}
+                                  </motion.div>
                              </button>
                              
                              {/* Desktop Tooltip (Bottom) */}
                              <div className="absolute top-full mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 whitespace-nowrap z-20">
                                  <p className="text-[10px] font-sans tracking-widest uppercase text-white">
-                                     {isInspectingDesktop ? "收起所有评论" : "点击查看评论"}
+                                     {isInspectingDesktop ? "收起所有评论" : (currentPhotoCommentCount > 0 ? `${currentPhotoCommentCount} 条评论` : "点击查看评论")}
                                  </p>
                              </div>
                         </div>

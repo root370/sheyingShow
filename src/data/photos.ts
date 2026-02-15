@@ -17,6 +17,8 @@ export interface Photo {
   aspectRatio: 'landscape' | 'portrait' | 'square';
   color: string; // Dominant color for the spotlight
   blurhash?: string; // Generated BlurHash
+  picks_count?: number; // Total picks
+  is_picked?: boolean; // Current user picked status
   annotations: Annotation[];
   exif?: {
     ISO?: number;

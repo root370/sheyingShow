@@ -1,11 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
-// Initialize Supabase Client (Service Role for API)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Use Service Role to bypass RLS or ensure writes
-);
+// Use the shared Admin client for DB operations (bypasses RLS)
+const supabase = supabaseAdmin;
 
 export const config = {
   api: {

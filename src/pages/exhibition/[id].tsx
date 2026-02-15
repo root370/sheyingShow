@@ -92,7 +92,8 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
       aspectRatio: ratio, // Use calculated ratio
       color: '#000000',
       annotations: [],
-      exif: p.exif_data
+      exif: p.exif_data,
+      picks_count: p.picks_count || 0
     };
   });
 

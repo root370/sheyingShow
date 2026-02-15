@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ExhibitionPoster from '@/components/ExhibitionPoster';
+import MasonryGrid from '@/components/MasonryGrid';
 import NavigationSwitch from '@/components/NavigationSwitch';
 import HeroSection from '@/components/HeroSection';
-import { Settings, Plus, ArrowRight, LogOut, Loader2 } from 'lucide-react';
+import { Settings, Plus, ArrowRight, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,6 +14,8 @@ import { useExhibitionCache } from '@/context/ExhibitionContext';
 import TargetedApologyModal from '@/components/TargetedApologyModal';
 import ResonanceLetter from '@/components/ResonanceLetter';
 import GradientText from '@/components/GradientText/GradientText';
+import TopPicksShowcase from './TopPicksShowcase';
+import ExhibitionSkeleton from '@/components/ExhibitionSkeleton';
 
 interface LobbyProps {
   mode: 'dashboard' | 'explore';
@@ -26,6 +29,7 @@ export default function Lobby({ mode }: LobbyProps) {
   const [exhibitions, setExhibitions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [initialTopPicks, setInitialTopPicks] = useState<any[]>([]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -153,14 +157,44 @@ export default function Lobby({ mode }: LobbyProps) {
 
   useEffect(() => {
     async function fetchData() {
-      // Check if we have fresh cache (e.g. less than 1 minute old)
-      // We restore cache usage now that we have proper sync on delete
-      // const currentCache = mode === 'dashboard' ? dashboardCache : exploreCache;
-      // const currentCache = null; // Force refresh disabled, using smart cache
-      // FORCE CLEAR CACHE:
-      const currentCache = null as any;
-      if (mode === 'dashboard' && dashboardCache) setDashboardCache(null);
-      if (mode === 'explore' && exploreCache) setExploreCache(null);
+      const transformExhibitions = (rawList: any[], type: 'own' | 'collected' | 'public') => {
+        return rawList
+        .filter((ex: any) => ex.cover_url && ex.cover_url.length > 0) // Filter out exhibitions with no cover
+        .map((ex: any) => {
+            // Calculate has_picks from photos array
+            const totalPicks = ex.photos?.reduce((acc: number, p: any) => acc + (p.picks_count || 0), 0) || 0;
+            const hasPicks = totalPicks > 0;
+
+            // Calculate total comments (Guestbook + Photo Annotations)
+            const guestbookCount = ex.guestbook_entries?.[0]?.count || 0;
+            const photosCommentCount = ex.photos?.reduce((acc: number, p: any) => {
+                return acc + (p.annotations?.[0]?.count || 0);
+            }, 0) || 0;
+
+            return {
+               id: ex.id,
+               title: ex.title,
+               description: ex.description,
+               year: new Date(ex.created_at).getFullYear().toString(),
+               // Ensure we use the DB cover_url if present
+               cover: ex.cover_url, 
+               rotate: '0deg',
+               offsetY: 0,
+               borderRadius: "0px",
+               photoCount: ex.photo_count || 0,
+               username: ex.profiles?.username,
+               type: type,
+               created_at: ex.created_at,
+               comments_count: guestbookCount + photosCommentCount,
+               has_picks: hasPicks,
+               total_picks: totalPicks
+            };
+       });
+    };
+
+      // Check if we have fresh cache
+      // We restore cache usage to prevent loading delay when returning from details
+      const currentCache = mode === 'dashboard' ? dashboardCache : exploreCache;
       
       if (currentCache) {
           setExhibitions(currentCache.exhibitions);
@@ -208,104 +242,99 @@ export default function Lobby({ mode }: LobbyProps) {
       // Or just fetch if no cache.
       if (!currentCache) {
         try {
-        let data = [];
-        let collectedData = [];
+        let data: any[] = [];
+        let collectedData: any[] = [];
         let error = null;
 
-        if (mode === 'dashboard') {
-            if (currentUserId) {
-                // Parallel fetching for dashboard
-                const [exhibitionsResult, collectedResult, commentsResult] = await Promise.all([
+            if (mode === 'dashboard') {
+                if (currentUserId) {
+                    // 1. Fetch Own Exhibitions (Priority) - NOW INCLUDES picks_count
+                    const { data: ownData, error: ownError } = await supabase
+                        .from('exhibitions')
+                        .select('id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username), guestbook_entries(count), photos(picks_count, annotations(count))')
+                        .eq('user_id', currentUserId)
+                        .order('created_at', { ascending: false });
+                    
+                    if (ownError) console.error("Error fetching own exhibitions:", ownError);
+
+                    const formattedOwn = transformExhibitions(ownData || [], 'own');
+                    
+                    // Render immediately if we have no cache to show content ASAP
+                    if (!currentCache) {
+                        setExhibitions(formattedOwn);
+                        setLoading(false); // <--- UNBLOCK UI IMMEDIATELY
+                    }
+
+                    // 2. Fetch Collections & Notifications (Background)
+                    const [collectedResult, commentsResult] = await Promise.all([
+                        supabase
+                            .from('collections')
+                            .select('exhibitions(id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username), guestbook_entries(count), photos(picks_count, annotations(count)))')
+                            .eq('user_id', currentUserId)
+                            .order('created_at', { ascending: false }),
+                        supabase
+                            .from('guestbook_entries')
+                            .select('*, exhibitions!inner(user_id, title), profiles(username)')
+                            .eq('exhibitions.user_id', currentUserId)
+                            .eq('is_read', false)
+                            .neq('user_id', currentUserId)
+                            .order('created_at', { ascending: false })
+                    ]);
+
+                    // Process Collected
+                    let formattedCollected: any[] = [];
+                    if (collectedResult.data) {
+                        const rawCollected = collectedResult.data.map((c: any) => c.exhibitions).filter(Boolean);
+                        formattedCollected = transformExhibitions(rawCollected, 'collected');
+                    }
+
+                    // Merge and Update (might cause layout shift but ensures data completeness)
+                    const ownIds = new Set(formattedOwn.map((e: any) => e.id));
+                    const filteredCollected = formattedCollected.filter((e: any) => !ownIds.has(e.id));
+                    
+                    const merged = [...formattedOwn, ...filteredCollected].sort((a: any, b: any) => 
+                        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                    );
+                    
+                    setExhibitions(merged);
+                    setDashboardCache(merged);
+
+                    // Process Notifications
+                    if (commentsResult.data && commentsResult.data.length > 0) {
+                        setLetterComments(commentsResult.data);
+                        setTimeout(() => setShowLetter(true), 1000);
+                    }
+                    
+                    // If we rendered early, we are done. If we had cache, we just updated it.
+                    // Ensure loading is false in all cases
+                    setLoading(false);
+                }
+            } else {
+                // EXPLORE MODE: Fetch Exhibitions AND Top Picks in Parallel
+                const [exhibitionsResult, topPicksResult] = await Promise.all([
                     supabase
                         .from('exhibitions')
-                        .select('id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username)')
-                        .eq('user_id', currentUserId)
+                        .select('*, profiles(username), guestbook_entries(count), photos(annotations(count))')
+                        .eq('status', 'published')
                         .order('created_at', { ascending: false }),
-                    supabase
-                        .from('collections')
-                        .select('exhibitions(id, title, description, created_at, cover_url, photo_count, status, user_id, profiles(username))')
-                        .eq('user_id', currentUserId)
-                        .order('created_at', { ascending: false }),
-                    supabase
-                        .from('guestbook_entries')
-                        .select('*, exhibitions!inner(user_id, title), profiles(username)')
-                        .eq('exhibitions.user_id', currentUserId)
-                        .eq('is_read', false)
-                        .neq('user_id', currentUserId)
-                        .order('created_at', { ascending: false })
+                    fetch('/api/photos/top-picks').then(res => res.json()).catch(() => [])
                 ]);
 
                 data = exhibitionsResult.data || [];
                 error = exhibitionsResult.error;
-
-                if (collectedResult.data) {
-                    collectedData = collectedResult.data.map((c: any) => c.exhibitions).filter(Boolean);
-                }
-
-                if (commentsResult.data && commentsResult.data.length > 0) {
-                    setLetterComments(commentsResult.data);
-                    // Slight delay to show letter after loading
-                    setTimeout(() => setShowLetter(true), 1000);
+                
+                if (Array.isArray(topPicksResult)) {
+                    setInitialTopPicks(topPicksResult);
                 }
             }
-        } else {
-            const result = await supabase
-                .from('exhibitions')
-                .select('*, profiles(username)')
-                .eq('status', 'published')
-                .order('created_at', { ascending: false });
-            data = result.data || [];
-            error = result.error;
-        }
 
         if (error) {
             console.error('Error loading exhibitions:', error);
-        } else {
+        } else if (mode === 'explore') {
             console.log('Raw Exhibitions Data:', data);
-            const transformExhibitions = (rawList: any[], type: 'own' | 'collected' | 'public') => {
-                return rawList
-                .filter((ex: any) => ex.cover_url && ex.cover_url.length > 0) // Filter out exhibitions with no cover
-                .map((ex: any) => {
-                    console.log(`Exhibition ${ex.id} cover_url:`, ex.cover_url);
-                    return {
-                       id: ex.id,
-                       title: ex.title,
-                       description: ex.description,
-                       year: new Date(ex.created_at).getFullYear().toString(),
-                       // Ensure we use the DB cover_url if present
-                       cover: ex.cover_url, 
-                       rotate: '0deg',
-                       offsetY: 0,
-                       borderRadius: "0px",
-                       photoCount: ex.photo_count || 0,
-                       username: ex.profiles?.username,
-                       type: type,
-                       created_at: ex.created_at
-                    };
-               });
-            };
-
-            let finalData: any[] = [];
-
-            if (mode === 'dashboard') {
-                const finalOwn = transformExhibitions(data, 'own');
-                const finalCollected = collectedData.length > 0 ? transformExhibitions(collectedData, 'collected') : [];
-                
-                const ownIds = new Set(finalOwn.map(e => e.id));
-                const filteredCollected = finalCollected.filter(e => !ownIds.has(e.id));
-                
-                const merged = [...finalOwn, ...filteredCollected].sort((a, b) => 
-                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                );
-                finalData = merged;
-                setDashboardCache(merged); // Update Cache
-            } else {
-                const finalExhibitions = transformExhibitions(data, 'public');
-                finalData = finalExhibitions;
-                setExploreCache(finalExhibitions); // Update Cache
-            }
-            
-            setExhibitions(finalData);
+            const finalExhibitions = transformExhibitions(data, 'public');
+            setExploreCache(finalExhibitions); // Update Cache
+            setExhibitions(finalExhibitions);
         }
       } catch (err) {
         console.error('Unexpected error loading exhibitions:', err);
@@ -342,15 +371,15 @@ export default function Lobby({ mode }: LobbyProps) {
                         colors={["#E5D0AC", "#FFFFFF", "#E5D0AC"]}
                         animationSpeed={6}
                         showBorder={false}
-                        className="font-serif text-3xl font-bold tracking-[0.3em] uppercase"
+                        className="font-serif text-4xl font-bold tracking-[0.3em] uppercase"
                     >
                         L A T E N T
                     </GradientText>
                  </h1>
              </div>
              
-             <span className="text-[8px] tracking-[0.3em] font-sans font-medium opacity-70 uppercase mt-2 md:mt-1 text-center md:text-left">
-                显影未见之物
+             <span className="text-[10px] tracking-[0.3em] font-sans font-medium opacity-70 uppercase mt-2 md:mt-1 text-center md:text-left">
+                DEVELOPING THE UNSEEN
             </span>
         </div>
 
@@ -361,8 +390,8 @@ export default function Lobby({ mode }: LobbyProps) {
                     className="md:hidden flex flex-col items-center gap-1 opacity-60 hover:opacity-100 transition-opacity duration-300"
                     aria-label="导入底片"
                 >
-                    <Plus size={20} strokeWidth={1} />
-                    <span className="text-[10px] font-sans tracking-widest uppercase text-white">上传</span>
+                    <Plus size={24} strokeWidth={1} />
+                    <span className="text-xs font-sans tracking-widest uppercase text-white">上传</span>
                 </Link>
             )}
             {isLoggedIn ? (
@@ -372,23 +401,23 @@ export default function Lobby({ mode }: LobbyProps) {
                         className="opacity-60 hover:opacity-100 transition-opacity duration-300"
                         aria-label="设置"
                     >
-                        <Settings size={20} strokeWidth={1} />
+                        <Settings size={24} strokeWidth={1} />
                     </button>
                     <button 
                         onClick={handleLogout}
                         className="opacity-60 hover:opacity-100 transition-opacity duration-300"
                         aria-label="登出"
                     >
-                        <LogOut size={20} strokeWidth={1} />
+                        <LogOut size={24} strokeWidth={1} />
                     </button>
                 </>
             ) : (
                 <Link 
                     href="/login" 
-                    className="flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 font-sans text-xs tracking-[0.2em] uppercase"
+                    className="flex items-center gap-2 opacity-60 hover:opacity-100 transition-opacity duration-300 font-sans text-sm tracking-[0.2em] uppercase"
                     aria-label="登录"
                 >
-                    进入暗房 <ArrowRight size={14} />
+                    进入暗房 <ArrowRight size={18} />
                 </Link>
             )}
         </div>
@@ -486,69 +515,88 @@ export default function Lobby({ mode }: LobbyProps) {
       <div className="relative z-10 w-full mx-auto flex-1">
         
         <AnimatePresence mode="wait">
-            {loading ? (
-                <motion.div 
-                    key="loader"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="h-screen flex items-center justify-center"
-                >
-                    <Loader2 className="animate-spin text-accent" size={40} strokeWidth={0.5} />
-                </motion.div>
-            ) : (
-                <motion.div
-                    key="content"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-                >
-                    {/* Hero Section */}
-                    <HeroSection 
-                        title={isExplore ? "探索未见之物" : userProfile?.username || "艺术家工作室"}
-                        subtitle={isExplore ? "精选辑录" : "欢迎归来"}
-                        userProfile={userProfile || undefined}
-                    />
+            <motion.div
+                key="content"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+            >
+                {/* Hero Section */}
+                <HeroSection 
+                    title={isExplore ? "探索未见之物" : userProfile?.username || "艺术家工作室"}
+                    subtitle={isExplore ? "精选辑录" : "欢迎归来"}
+                    userProfile={userProfile || undefined}
+                />
+                
+                {/* Top Picks Showcase */}
+                {isExplore && <TopPicksShowcase initialPicks={initialTopPicks} />}
 
-                    {/* Content Container */}
-                    <div className="relative z-10 pb-20 px-6 md:px-12 lg:px-24 max-w-[1920px] mx-auto">
-                        
-                        {/* Gallery Grid */}
-                        <div className="space-y-0 md:space-y-20 mt-0 md:mt-20">
-                             {!isExplore && (
-                                <div className="hidden md:flex items-center justify-between">
+                {/* Content Container */}
+                <div className="relative z-10 pb-20 px-6 md:px-12 lg:px-24 max-w-[1920px] mx-auto">
+                    
+                    {/* Gallery Grid */}
+                    <div className="space-y-0 md:space-y-12 mt-0 md:mt-8">
+                            {!isExplore && (
+                            <div className="hidden md:flex items-center justify-between">
+                                {loading ? (
+                                    <div className="h-10 w-48 bg-white/10 rounded animate-pulse" />
+                                ) : (
                                     <h3 className="font-serif text-4xl text-white italic">精选作品</h3>
-                                    <div className="h-[1px] flex-1 bg-white/5 mx-12" />
-                                </div>
-                             )}
-                            
-                            {exhibitions.length === 0 ? (
-                                 <div className="h-[40vh] flex flex-col items-center justify-center border border-dashed border-white/5 rounded-sm bg-white/[0.02]">
-                                    <p className="text-neutral-600 font-sans text-xs tracking-[0.3em] mb-8 uppercase">暂无潜影。开始创作。</p>
-                                    {!isExplore && (
-                                        <Link href="/editor" className="text-accent hover:text-white transition-colors flex items-center gap-3 text-xs uppercase tracking-[0.2em]">
-                                            <Plus size={14} /> 上传底片
-                                        </Link>
-                                    )}
-                                 </div>
-                            ) : (
-                                <div className="columns-2 md:columns-3 lg:columns-4 gap-4 md:gap-6">
-                                    {exhibitions.map((exhibition, index) => (
-                                        <ExhibitionPoster 
-                                            key={exhibition.id}  
-                                            exhibition={exhibition} 
-                                            index={index} 
-                                            showAuthor={isExplore || exhibition.type === 'collected'}
-                                            onDelete={handleDeleteExhibition}
-                                        />
-                                    ))}
-                                </div>
+                                )}
+                                <div className="h-[1px] flex-1 bg-white/5 mx-12" />
+                            </div>
                             )}
-                        </div>
-                    </div>
 
-                </motion.div>
-            )}
+                            {isExplore && (loading || exhibitions.length > 0) && (
+                            <div className="mb-8 pl-1 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
+                                <h3 className="text-xl md:text-2xl font-serif font-bold tracking-[0.2em] text-white/90">
+                                    LATEST EXHIBITIONS
+                                </h3>
+                                <p className="text-[10px] text-white/40 font-sans tracking-widest mt-2 uppercase">
+                                    最新展览
+                                </p>
+                            </div>
+                            )}
+                        
+                        {loading ? (
+                            <MasonryGrid 
+                                items={[1, 2, 3, 4, 5, 6, 7, 8]}
+                                columns={{ default: 4, lg: 4, md: 3, sm: 2 }}
+                                gap={isMobile ? 8 : 24}
+                                renderItem={(item, index) => (
+                                    <ExhibitionSkeleton key={index} />
+                                )}
+                            />
+                        ) : exhibitions.length === 0 ? (
+                                <div className="h-[40vh] flex flex-col items-center justify-center border border-dashed border-white/5 rounded-sm bg-white/[0.02]">
+                                <p className="text-neutral-600 font-sans text-xs tracking-[0.3em] mb-8 uppercase">暂无潜影。开始创作。</p>
+                                {!isExplore && (
+                                    <Link href="/editor" className="text-accent hover:text-white transition-colors flex items-center gap-3 text-xs uppercase tracking-[0.2em]">
+                                        <Plus size={14} /> 上传底片
+                                    </Link>
+                                )}
+                                </div>
+                        ) : (
+                            <MasonryGrid 
+                                items={exhibitions}
+                                columns={{ default: 4, lg: 4, md: 3, sm: 2 }}
+                                gap={isMobile ? 8 : 24}
+                                renderItem={(exhibition, index) => (
+                                    <ExhibitionPoster 
+                                        key={exhibition.id}  
+                                        exhibition={exhibition} 
+                                        index={index} 
+                                        showAuthor={isExplore || exhibition.type === 'collected'}
+                                        onDelete={handleDeleteExhibition}
+                                        priority={index < 20}
+                                    />
+                                )}
+                            />
+                        )}
+                    </div>
+                </div>
+
+            </motion.div>
         </AnimatePresence>
       </div>
       {/* Footer */}

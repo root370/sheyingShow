@@ -9,6 +9,11 @@ export interface Exhibition {
   left: string;
   rotate: string;
   borderRadius: string;
+  // New Metadata
+  comments_count?: number;
+  has_picks?: boolean;
+  username?: string; // Add this as it's used in Poster
+  type?: 'own' | 'collected' | 'public';
 }
 
 export const exhibitions: Exhibition[] = [
@@ -22,7 +27,9 @@ export const exhibitions: Exhibition[] = [
     top: "10%",
     left: "5%",
     rotate: "-3deg",
-    borderRadius: "12% 58% 18% 46% / 46% 16% 52% 14%" // More extreme organic shape
+    borderRadius: "12% 58% 18% 46% / 46% 16% 52% 14%",
+    comments_count: 5,
+    has_picks: true
   },
   {
     id: "2",
@@ -34,7 +41,9 @@ export const exhibitions: Exhibition[] = [
     top: "40%",
     left: "30%",
     rotate: "2deg",
-    borderRadius: "61% 17% 43% 18% / 22% 51% 15% 58%" // More extreme organic shape
+    borderRadius: "61% 17% 43% 18% / 22% 51% 15% 58%",
+    comments_count: 0,
+    has_picks: false
   },
   {
     id: "3",
@@ -46,6 +55,8 @@ export const exhibitions: Exhibition[] = [
     top: "15%",
     left: "60%",
     rotate: "5deg",
-    borderRadius: "28% 54% 19% 48% / 35% 22% 55% 18%" // More extreme organic shape
+    borderRadius: "28% 54% 19% 48% / 35% 22% 55% 18%",
+    comments_count: 12,
+    has_picks: true
   }
 ];

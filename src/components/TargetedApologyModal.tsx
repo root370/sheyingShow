@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import ShareButton from './ShareButton';
 
 interface TargetedApologyModalProps {
   currentUser?: { username: string };
@@ -363,13 +364,15 @@ export default function TargetedApologyModal({ currentUser }: TargetedApologyMod
             </div>
 
             {/* Footer Action */}
-            <div className="p-6 border-t border-white/5 bg-white/[0.02] flex justify-center">
+            <div className="p-6 border-t border-white/5 bg-white/[0.02] flex flex-col items-center gap-6">
               <button
                 onClick={handleClose}
                 className="px-8 py-3 bg-white text-black text-xs font-bold tracking-[0.2em] uppercase hover:bg-gray-200 transition-colors"
               >
                 {message.buttonText || 'Received'}
               </button>
+
+              <ShareButton />
             </div>
           </motion.div>
         </div>

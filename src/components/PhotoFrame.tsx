@@ -39,15 +39,24 @@ interface PhotoFrameProps {
   enableAI?: boolean;
   isOwner?: boolean;
   onDevelop?: (id: string) => void;
-  onExpand?: () => void;
+  onExpand?: (id: string) => void;
   objectFit?: 'contain' | 'cover'; // New Prop for object-fit control
   priority?: boolean; // New prop for eager loading
   isActive?: boolean;
-  onNext?: () => void;
+  onNext?: (index: number) => void;
   // Updated Prop
   onModeChange?: (mode: 'none' | 'view' | 'add') => void;
+  onCommentCountChange?: (count: number) => void;
   
   isLast?: boolean;
+  index: number;
+
+  // Pick System
+  picksCount?: number;
+  isPicked?: boolean;
+  
+  // Deep Link Highlight
+  highlight?: boolean;
 }
 
 const PhotoFrame: React.FC<PhotoFrameProps> = ({ 
@@ -76,12 +85,99 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   isActive = false,
   onNext,
   onModeChange,
+  onCommentCountChange,
   isLast = false,
+  index,
+  picksCount = 0,
+  isPicked = false,
+  highlight = false,
 }) => {
+  // Pick State
+  const [localPicksCount, setLocalPicksCount] = useState(picksCount);
+  const [localIsPicked, setLocalIsPicked] = useState(isPicked);
+
+  useEffect(() => {
+    setLocalPicksCount(picksCount);
+    setLocalIsPicked(isPicked);
+  }, [picksCount, isPicked]);
+
+  const handlePick = async () => {
+      if (!id) return;
+      const previousPicked = localIsPicked;
+      const previousCount = localPicksCount;
+
+      // Optimistic Update
+      const newPicked = !previousPicked;
+      setLocalIsPicked(newPicked);
+      setLocalPicksCount(prev => newPicked ? prev + 1 : prev - 1);
+
+      try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+             throw new Error("Login required");
+          }
+          
+          const res = await fetch(`/api/photo/${id}/pick`, { 
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${session.access_token}`
+              }
+          });
+          
+          if (!res.ok) throw new Error('Pick failed');
+          
+          const data = await res.json();
+          setLocalPicksCount(data.count);
+          setLocalIsPicked(data.picked);
+      } catch (e) {
+          console.error(e);
+          setLocalIsPicked(previousPicked);
+          setLocalPicksCount(previousCount);
+      }
+  };
+
   // Derived State for backward compatibility
   const isInspecting = interactionMode !== 'none';
   const canAddComment = interactionMode === 'add' || interactionMode === 'mixed';
   const showComments = interactionMode === 'view' || interactionMode === 'mixed';
+  
+  // Highlight Effect
+  const [showHighlight, setShowHighlight] = useState(highlight);
+  useEffect(() => {
+      if (highlight) {
+          const t = setTimeout(() => setShowHighlight(false), 2000);
+          return () => clearTimeout(t);
+      }
+  }, [highlight]);
+  
+  // Dynamic Aspect Ratio Detection
+  const [currentAspectRatio, setCurrentAspectRatio] = useState<string>(aspectRatio);
+
+  useEffect(() => {
+    setCurrentAspectRatio(aspectRatio);
+  }, [aspectRatio]);
+
+  const handleImageLoad = React.useCallback((width: number, height: number) => {
+      // Determine actual aspect ratio
+      let detected = 'landscape';
+      if (height > width) detected = 'portrait';
+      else if (Math.abs(width - height) < 10) detected = 'square'; // Tolerance for square
+      
+      // Update if different from current
+      if (detected !== currentAspectRatio) {
+          console.log(`[PhotoFrame] Correcting aspect ratio for ${id}: ${currentAspectRatio} -> ${detected}`);
+          setCurrentAspectRatio(detected);
+      }
+  }, [currentAspectRatio, id]);
+
+  // Memoized Handlers for Child Components
+  const handleNext = React.useCallback(() => {
+      if (onNext) onNext(index);
+  }, [onNext, index]);
+
+  const handleExpand = React.useCallback(() => {
+      if (onExpand && id) onExpand(id);
+  }, [onExpand, id]);
 
   // Developing State
   const [isDeveloped, setIsDeveloped] = useState(skipDeveloping); // If skipDeveloping is true, start as developed
@@ -90,8 +186,12 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   useEffect(() => {
     if (skipDeveloping) {
         setIsDeveloped(true);
+        // Sync with parent state to ensure UI elements (like comment buttons) are visible
+        if (onDevelop && id) {
+            onDevelop(id);
+        }
     }
-  }, [skipDeveloping]);
+  }, [skipDeveloping, id, onDevelop]);
   const [isHolding, setIsHolding] = useState(false);
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const [randomDelay, setRandomDelay] = useState(0);
@@ -110,6 +210,13 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   // Annotation State
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [realAnnotations, setRealAnnotations] = useState<Annotation[]>(initialAnnotations);
+
+  // Report comment count to parent when active
+  useEffect(() => {
+      if (isActive && onCommentCountChange) {
+          onCommentCountChange(realAnnotations.length);
+      }
+  }, [isActive, realAnnotations.length, onCommentCountChange]);
   
   // Draft State
   const [draftDot, setDraftDot] = useState<{x: number, y: number} | null>(null);
@@ -142,6 +249,8 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
         if (user) setCurrentUserId(user.id);
+    }).catch(err => {
+        console.warn("[PhotoFrame] Auth check failed:", err);
     });
   }, []);
 
@@ -308,7 +417,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
       if (!canAddComment) {
           // Not adding -> Expand to Full Screen (DESKTOP ONLY) or just do nothing if viewing
           if (!isMobile && onExpand && interactionMode === 'none') {
-              onExpand();
+              handleExpand();
           }
           return;
       }
@@ -358,31 +467,56 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   // Fetch annotations if ID exists
   useEffect(() => {
     if (!id) return;
+    const controller = new AbortController();
+    
     async function fetchAnnotations() {
-        const { data } = await supabase
-            .from('annotations')
-            .select('*, profiles(username)')
-            .eq('photo_id', id);
-        
-        if (data) {
-            const formatted = data.map((a: any) => ({
-                id: a.id,
-                x: a.x_coord,
-                y: a.y_coord,
-                text: a.message,
-                user_id: a.user_id,
-                username: a.profiles?.username
-            }));
-            setRealAnnotations(formatted);
+        try {
+            const { data, error } = await supabase
+                .from('annotations')
+                .select('*, profiles(username)')
+                .eq('photo_id', id)
+                .abortSignal(controller.signal);
+            
+            if (controller.signal.aborted) return;
+
+            if (error) {
+                console.warn("[PhotoFrame] Fetch annotations error:", error);
+                return;
+            }
+            
+            if (data) {
+                const formatted = data.map((a: any) => ({
+                    id: a.id,
+                    x: a.x_coord,
+                    y: a.y_coord,
+                    text: a.message,
+                    user_id: a.user_id,
+                    username: a.profiles?.username
+                }));
+                setRealAnnotations(formatted);
+            }
+        } catch (err: any) {
+            if (err.name !== 'AbortError') {
+                console.warn("[PhotoFrame] Fetch annotations failed:", err);
+            }
         }
     }
+    
+    // Only fetch if active or in view (optimization)
+    // But we need to be careful not to break functionality. 
+    // The previous behavior was fetch on mount.
+    // Given the horizontal scroll, maybe fetch on mount is fine, but we should handle aborts.
     fetchAnnotations();
+
+    return () => {
+        controller.abort();
+    };
   }, [id]);
 
   const handleImageClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     // VISITOR: Only allow marking if inspecting is ON
     if (!isInspecting) {
-        if (onExpand) onExpand();
+        if (onExpand) handleExpand();
         return;
     }
     if (draftDot) return; 
@@ -814,7 +948,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
 
                                                     {isMobile ? (
                                                         /* Mobile Split View */
-                                                        <div className={`flex gap-2 ${aspectRatio === 'portrait' ? 'flex-row h-64' : 'flex-col'}`}>
+                                                        <div className={`flex gap-2 ${currentAspectRatio === 'portrait' ? 'flex-row h-64' : 'flex-col'}`}>
                                                             {/* Original */}
                                                             <div className="relative flex-1 rounded-sm overflow-hidden border border-white/10 bg-[#050505]">
                                                                 <img 
@@ -980,7 +1114,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                     <PhotoBottomDeck 
                         onAnalyze={handleAnalyze}
                         onModeChange={onModeChange}
-                        onNext={onNext}
+                        onNext={handleNext}
                         isAnalyzing={isAnalyzing}
                         interactionMode={interactionMode === 'mixed' ? 'view' : interactionMode}
                         isLast={isLast}
@@ -1005,6 +1139,9 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
                                 setClickClientPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 }); // Mock pos
                             }
                         }}
+                        picksCount={localPicksCount}
+                        isPicked={localIsPicked}
+                        onPick={handlePick}
                     />,
                     document.body
                 )}
@@ -1583,7 +1720,7 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
           // Consistent height constraint logic
           height: isMobile ? 'auto' : '65vh', 
           width: 'auto',
-          minWidth: !isMobile ? (aspectRatio === 'portrait' ? '30vh' : '50vh') : '100%',
+          minWidth: !isMobile ? (currentAspectRatio === 'portrait' ? '30vh' : '50vh') : '100%',
           aspectRatio: isMobile ? 'auto' : undefined
         }}
       >
@@ -1661,10 +1798,11 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
               src={src}
               alt={alt}
               blurhash={blurhash}
-              aspectRatio={aspectRatio}
+              aspectRatio={currentAspectRatio as any}
               loading={priority ? "eager" : "lazy"}
               draggable={false}
               isMobile={isMobile}
+              onImageLoad={handleImageLoad}
               className="w-auto h-auto block object-contain select-none"
               style={{
                 maxHeight: isMobile ? 'none' : (contentMaxHeight || '100%'),
@@ -2033,4 +2171,4 @@ const PhotoFrame: React.FC<PhotoFrameProps> = ({
   );
 };
 
-export default PhotoFrame;
+export default React.memo(PhotoFrame);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scan, MessageSquare, ChevronDown, ChevronUp, Trash2, Edit2 } from 'lucide-react';
+import { Scan, MessageSquare, ChevronDown, ChevronUp, Trash2, Edit2, Gem } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface PhotoBottomDeckProps {
@@ -21,6 +21,11 @@ interface PhotoBottomDeckProps {
   hasUserComment?: boolean;
   onDeleteComment?: () => void;
   onEditComment?: () => void;
+
+  // Pick System
+  picksCount?: number;
+  isPicked?: boolean;
+  onPick?: () => void;
 }
 
 export default function PhotoBottomDeck({
@@ -36,6 +41,9 @@ export default function PhotoBottomDeck({
   hasUserComment = false,
   onDeleteComment,
   onEditComment,
+  picksCount = 0,
+  isPicked = false,
+  onPick,
 }: PhotoBottomDeckProps) {
   const isViewMode = interactionMode === 'view';
   const isAddMode = interactionMode === 'add';
@@ -129,6 +137,31 @@ export default function PhotoBottomDeck({
               {/* Control Group Container */}
               <div className="flex items-center bg-black/20 backdrop-blur-md border border-white/10 rounded-full p-1 shadow-lg">
                   
+                  {/* Pick Button */}
+                  {onPick && (
+                    <>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={onPick}
+                        className={`
+                          relative flex items-center gap-2 px-4 h-12 rounded-full transition-all
+                          ${isPicked
+                            ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]'
+                            : 'text-white/50 hover:bg-white/10 hover:text-white'
+                          }
+                        `}
+                      >
+                         <Gem size={20} strokeWidth={1.5} fill={isPicked ? "currentColor" : "none"} />
+                         {picksCount > 0 && (
+                             <span className="text-[12px] font-sans font-bold tracking-widest">
+                                 {picksCount > 999 ? (picksCount / 1000).toFixed(1) + 'k' : picksCount}
+                             </span>
+                         )}
+                      </motion.button>
+                      <div className="w-px h-6 bg-white/10 mx-1" />
+                    </>
+                  )}
+
                   {/* View Button (Eye) - Only show if there are comments */}
                   {commentCount > 0 && (
                     <>
